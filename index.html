@@ -1,0 +1,1890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Kitchen Rush</title>
+<style>
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #2b2620;
+  color: #f1e9dc;
+  font-family: "Segoe UI", Tahoma, sans-serif;
+  height: 100%;
+  overflow: hidden;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px;
+  gap: 12px;
+}
+
+#hud {
+  width: 100%;
+  max-width: 900px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  background: #3b3327;
+  border: 2px solid #5c4d38;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 15px;
+}
+
+#money { font-weight: bold; color: #ffd76b; font-size: 18px; }
+#staffCount { color: #b7c9a8; font-size: 13px; }
+#hint { font-size: 12px; color: #b8ab94; }
+
+#moveControls { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+#moveControls button { padding: 4px 10px; font-size: 12px; }
+
+#gameArea {
+  position: relative;
+  border: 3px solid #5c4d38;
+  border-radius: 6px;
+  background: #4a4030;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+
+canvas {
+  display: block;
+  background: #5b4f3a;
+  cursor: crosshair;
+}
+
+.hidden { display: none !important; }
+
+#contextMenu {
+  position: absolute;
+  z-index: 60;
+  background: #2f2a22;
+  border: 2px solid #8a6b3f;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  min-width: 120px;
+}
+
+#contextMenu button {
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 8px 10px;
+  border-radius: 4px;
+}
+#contextMenu button:hover { background: #4a3d28; }
+
+#menu {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 640px;
+  max-width: 92vw;
+  max-height: 82vh;
+  background: #2f2a22;
+  border: 3px solid #8a6b3f;
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+  display: flex;
+  flex-direction: column;
+  z-index: 50;
+  overflow: hidden;
+}
+
+#menu.hidden { display: none; }
+
+.menuHeader {
+  display: flex;
+  background: #1f1b16;
+  border-bottom: 2px solid #8a6b3f;
+}
+
+.tabBtn {
+  flex: 1;
+  background: none;
+  border: none;
+  color: #d8c9ab;
+  padding: 12px 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.tabBtn.active {
+  background: #4a3d28;
+  color: #ffd76b;
+  font-weight: bold;
+}
+
+#closeMenu {
+  background: #6b2b2b;
+  border: none;
+  color: #fff;
+  width: 44px;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.tabPanel {
+  display: none;
+  padding: 14px 18px;
+  overflow-y: auto;
+}
+
+.tabPanel.active { display: block; }
+
+.tabHelp {
+  font-size: 12px;
+  color: #a99c86;
+  margin: 0 0 10px 0;
+}
+
+#palette {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.paletteItem {
+  background: #423a2c;
+  border: 2px solid #6b5a3f;
+  border-radius: 8px;
+  padding: 10px;
+  text-align: center;
+  cursor: pointer;
+  font-size: 13px;
+  color: #f1e9dc;
+}
+
+.paletteItem:hover { border-color: #ffd76b; }
+.paletteItem.selected { border-color: #ffd76b; background: #5a4a2e; }
+.paletteItem .icon { font-size: 26px; display: block; margin-bottom: 4px; }
+.paletteItem .cost { color: #ffd76b; font-size: 11px; }
+
+button {
+  background: #4a3d28;
+  border: 2px solid #6b5a3f;
+  color: #f1e9dc;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+button:hover { background: #5a4a2e; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+#holdingInfo { font-size: 13px; color: #ffd76b; }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #4a3d28; }
+th { color: #ffd76b; }
+
+#hireRow { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+
+.smallBtn { padding: 4px 8px; font-size: 12px; }
+</style>
+</head>
+<body>
+  <div id="app">
+    <div id="hud">
+      <div id="money">💰 <span id="moneyVal">0</span></div>
+      <div id="staffCount"></div>
+      <div id="moveControls">
+        <span id="holdingInfo" class="hidden">Holding: <span id="holdingName">nothing</span> (Esc to cancel)</span>
+      </div>
+      <div id="hint">WASD move · SPACE interact · E menu · Right-click furniture for options</div>
+    </div>
+
+    <div id="gameArea">
+      <canvas id="gameCanvas"></canvas>
+      <div id="contextMenu" class="hidden">
+        <button data-action="move">🖐 Move</button>
+        <button data-action="rotate">🔄 Rotate</button>
+        <button data-action="store">📦 Store</button>
+        <button data-action="sell">💲 Sell</button>
+      </div>
+    </div>
+
+    <div id="menu" class="hidden">
+      <div class="menuHeader">
+        <button class="tabBtn active" data-tab="build">🧱 Build</button>
+        <button class="tabBtn" data-tab="recipes">📖 Recipes</button>
+        <button class="tabBtn" data-tab="staff">👥 Staff</button>
+        <button class="tabBtn" data-tab="objects">📦 Objects</button>
+        <button class="tabBtn" data-tab="settings">⚙️ Settings</button>
+        <button id="closeMenu">✕</button>
+      </div>
+
+      <div id="tab-build" class="tabPanel active">
+        <p class="tabHelp">Click an item, then click a grid tile to place it. Toggle <b>Move/Remove</b> (top bar) to pick up things already placed.</p>
+        <div id="palette"></div>
+      </div>
+
+      <div id="tab-recipes" class="tabPanel">
+        <p class="tabHelp">Enabled recipes can be ordered by customers.</p>
+        <table id="recipeTable">
+          <thead><tr><th></th><th>Recipe</th><th>Cost</th><th>Price</th><th>Cook time</th><th>Enabled</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div id="tab-staff" class="tabPanel">
+        <p class="tabHelp">Hire staff to automate the restaurant. They'll take orders, cook, deliver food and clean up on their own.</p>
+        <div id="hireRow"></div>
+        <table id="staffTable">
+          <thead><tr><th>Name</th><th>Role</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div id="tab-objects" class="tabPanel">
+        <p class="tabHelp">Everything currently placed in your restaurant. Pick one up to relocate or remove it.</p>
+        <table id="objectsTable">
+          <thead><tr><th></th><th>Object</th><th>Position</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div id="tab-settings" class="tabPanel">
+        <p class="tabHelp">Restaurant-wide settings.</p>
+        <button id="toggleOpenBtn">🔴 Close Restaurant</button>
+        <p class="tabHelp" id="openStatusText"></p>
+      </div>
+    </div>
+  </div>
+
+<script>
+// ============================================================
+// GRID + PATHFINDING
+// ============================================================
+
+const ROOM_SIZE = 5;
+const ROOM_GRID = 3; // 3x3 grid of 5x5 rooms
+const COLS = ROOM_SIZE * ROOM_GRID; // 15
+const INTERIOR_ROWS = ROOM_SIZE * ROOM_GRID; // 15
+const ROWS = INTERIOR_ROWS + 1; // +1 sidewalk row outside the building, for the customer queue
+const CELL = 48;
+const ROOM_PRICE_ORTHOGONAL = 800;
+const ROOM_PRICE_DIAGONAL = 1500;
+
+const DIRS = [
+  { x: 0, y: -1, name: 'up' },
+  { x: 0, y: 1, name: 'down' },
+  { x: -1, y: 0, name: 'left' },
+  { x: 1, y: 0, name: 'right' },
+];
+const OPPOSITE_DIR = { up: 'down', down: 'up', left: 'right', right: 'left' };
+
+// appliances that can only be used by approaching from one specific side (obj.side)
+const SINGLE_SIDE_TYPES = new Set(['stove', 'fridge']);
+
+// the direction(s), relative to obj, of the cell(s) a character must stand in to use it
+function usableSides(obj) {
+  if (SINGLE_SIDE_TYPES.has(obj.type)) {
+    const d = DIRS.find(d => d.name === obj.side);
+    return d ? [d] : DIRS;
+  }
+  return DIRS;
+}
+
+class World {
+  constructor() {
+    this.grid = [];
+    for (let y = 0; y < ROWS; y++) {
+      const row = [];
+      for (let x = 0; x < COLS; x++) row.push(null);
+      this.grid.push(row);
+    }
+    this.objects = [];
+
+    // 3x3 grid of 5x5 rooms; only the center one starts unlocked
+    this.rooms = [];
+    const center = Math.floor(ROOM_GRID / 2);
+    for (let ry = 0; ry < ROOM_GRID; ry++) {
+      for (let rx = 0; rx < ROOM_GRID; rx++) {
+        const isCenter = rx === center && ry === center;
+        const isDiagonal = rx !== center && ry !== center;
+        this.rooms.push({
+          rx, ry,
+          x0: rx * ROOM_SIZE, y0: ry * ROOM_SIZE,
+          x1: rx * ROOM_SIZE + ROOM_SIZE - 1, y1: ry * ROOM_SIZE + ROOM_SIZE - 1,
+          unlocked: isCenter,
+          price: isCenter ? 0 : (isDiagonal ? ROOM_PRICE_DIAGONAL : ROOM_PRICE_ORTHOGONAL),
+        });
+      }
+    }
+
+    const centerRoom = this.roomAt(center * ROOM_SIZE, center * ROOM_SIZE);
+    const midX = centerRoom.x0 + Math.floor(ROOM_SIZE / 2);
+    this.entranceCells = [
+      { x: midX, y: centerRoom.y1 },
+      { x: midX + 1, y: centerRoom.y1 },
+    ];
+    this.staffSpawn = { x: centerRoom.x0, y: centerRoom.y0 + 1 };
+  }
+
+  roomAt(x, y) {
+    const rx = Math.floor(x / ROOM_SIZE), ry = Math.floor(y / ROOM_SIZE);
+    return this.rooms.find(r => r.rx === rx && r.ry === ry) || null;
+  }
+
+  isRoomUnlocked(x, y) {
+    if (y >= INTERIOR_ROWS) return true; // sidewalk row is always accessible
+    const room = this.roomAt(x, y);
+    return room ? room.unlocked : false;
+  }
+
+  // whether furniture can be placed at this cell (walkable, not reserved, room unlocked)
+  canBuildAt(x, y) {
+    return this.isWalkable(x, y) && !this.isReservedCell(x, y) && this.isRoomUnlocked(x, y);
+  }
+
+  randomEntranceCell() {
+    return this.entranceCells[Math.floor(Math.random() * this.entranceCells.length)];
+  }
+
+  nearestEntranceCell(fromX, fromY) {
+    let best = this.entranceCells[0], bestDist = Infinity;
+    for (const e of this.entranceCells) {
+      const d = Math.abs(e.x - fromX) + Math.abs(e.y - fromY);
+      if (d < bestDist) { bestDist = d; best = e; }
+    }
+    return best;
+  }
+
+  isReservedCell(x, y) {
+    if (y >= INTERIOR_ROWS) return true; // the sidewalk is never buildable
+    if (this.entranceCells.some(e => e.x === x && e.y === y)) return true;
+    if (this.staffSpawn.x === x && this.staffSpawn.y === y) return true;
+    return false;
+  }
+
+  // fixed waiting-line positions on the sidewalk, extending left from the right entrance cell
+  queueSpot(index) {
+    const base = this.entranceCells[this.entranceCells.length - 1];
+    const x = Math.max(0, base.x - index);
+    return { x, y: INTERIOR_ROWS };
+  }
+
+  inBounds(x, y) {
+    return x >= 0 && x < COLS && y >= 0 && y < ROWS;
+  }
+
+  cellAt(x, y) {
+    if (!this.inBounds(x, y)) return null;
+    return this.grid[y][x];
+  }
+
+  isWalkable(x, y) {
+    if (!this.inBounds(x, y)) return false;
+    return this.grid[y][x] === null;
+  }
+
+  place(obj, x, y) {
+    if (!this.inBounds(x, y) || this.grid[y][x] !== null) return false;
+    obj.x = x;
+    obj.y = y;
+    this.grid[y][x] = obj;
+    this.objects.push(obj);
+    return true;
+  }
+
+  removeAt(x, y) {
+    const obj = this.cellAt(x, y);
+    if (!obj) return null;
+    this.grid[y][x] = null;
+    this.objects = this.objects.filter(o => o !== obj);
+    return obj;
+  }
+
+  findObjects(type) {
+    return this.objects.filter(o => o.type === type);
+  }
+
+  // pass the target object as `obj` to restrict candidate cells to its usable side(s)
+  pathToAdjacent(sx, sy, tx, ty, obj) {
+    const dirs = obj ? usableSides(obj) : DIRS;
+    const targets = new Set();
+    for (const d of dirs) {
+      const nx = tx + d.x, ny = ty + d.y;
+      if (this.isWalkable(nx, ny)) targets.add(nx + ',' + ny);
+    }
+    if (targets.size === 0) return null;
+    if (sx === tx && sy === ty) return [];
+    return this._bfs(sx, sy, (x, y) => targets.has(x + ',' + y));
+  }
+
+  pathTo(sx, sy, tx, ty) {
+    if (!this.isWalkable(tx, ty)) return null;
+    return this._bfs(sx, sy, (x, y) => x === tx && y === ty);
+  }
+
+  _bfs(sx, sy, isGoal) {
+    const startKey = sx + ',' + sy;
+    if (isGoal(sx, sy)) return [];
+    const visited = new Set([startKey]);
+    const prev = new Map();
+    const queue = [{ x: sx, y: sy }];
+    let qi = 0;
+    while (qi < queue.length) {
+      const cur = queue[qi++];
+      for (const d of DIRS) {
+        const nx = cur.x + d.x, ny = cur.y + d.y;
+        const key = nx + ',' + ny;
+        if (visited.has(key)) continue;
+        if (!this.isWalkable(nx, ny)) continue;
+        visited.add(key);
+        prev.set(key, cur);
+        if (isGoal(nx, ny)) {
+          const path = [{ x: nx, y: ny }];
+          let ck = key;
+          let p = prev.get(ck);
+          while (p) {
+            path.unshift(p);
+            ck = p.x + ',' + p.y;
+            p = prev.get(ck);
+          }
+          path.shift();
+          return path;
+        }
+        queue.push({ x: nx, y: ny });
+      }
+    }
+    return null;
+  }
+
+  chairsForTables() {
+    const result = [];
+    for (const chair of this.findObjects('chair')) {
+      for (const d of DIRS) {
+        const neighbor = this.cellAt(chair.x + d.x, chair.y + d.y);
+        if (neighbor && neighbor.type === 'table') {
+          result.push({ chair, table: neighbor });
+          break;
+        }
+      }
+    }
+    return result;
+  }
+}
+
+// ============================================================
+// RECIPES, PLACEABLE OBJECTS, PLAYER, CUSTOMERS, STAFF
+// ============================================================
+
+const RECIPES = [
+  { id: 'rice', name: 'Rice', icon: '🍚', cost: 0, price: 5, cookTime: 3000, enabled: true },
+];
+
+function getRecipe(id) { return RECIPES.find(r => r.id === id); }
+
+const ITEM_DEFS = [
+  { type: 'fridge', name: 'Fridge', icon: '🧊', cost: 20 },
+  { type: 'stove', name: 'Stove', icon: '🔥', cost: 30 },
+  { type: 'orderStand', name: 'Order Stand', icon: '🧾', cost: 25 },
+  { type: 'sink', name: 'Sink', icon: '🚰', cost: 20 },
+  { type: 'payingBooth', name: 'Paying Booth', icon: '💳', cost: 25 },
+  { type: 'table', name: 'Table', icon: '🍽️', cost: 15 },
+  { type: 'chair', name: 'Chair', icon: '🪑', cost: 25 },
+  { type: 'wall', name: 'Counter', icon: '🧱', cost: 5 },
+];
+
+function getItemDef(type) { return ITEM_DEFS.find(i => i.type === type); }
+
+let _objId = 1;
+function createObject(type) {
+  const base = { type, x: 0, y: 0, id: _objId++ };
+  switch (type) {
+    case 'sink': return Object.assign(base, { washing: false, progress: 0 });
+    case 'fridge': return Object.assign(base, { side: 'down' });
+    case 'stove': return Object.assign(base, { cooking: false, recipe: null, progress: 0, ready: false, reservedBy: null, side: 'down' });
+    case 'orderStand': return Object.assign(base, { pending: [], ready: [] });
+    case 'payingBooth': return Object.assign(base, { collected: 0 });
+    case 'table': return Object.assign(base, { dirty: false, claimedDirty: false });
+    case 'chair': return Object.assign(base, { occupied: null });
+    default: return base;
+  }
+}
+
+class Mover {
+  constructor(x, y) {
+    this.gx = x; this.gy = y;
+    this.px = x * CELL + CELL / 2;
+    this.py = y * CELL + CELL / 2;
+    this.facing = 'down';
+    this.path = [];
+    this.speed = 110;
+    this.carrying = null;
+  }
+  setPath(path) { this.path = path ? path.slice() : []; }
+  get hasPath() { return this.path.length > 0; }
+  stepMove(dt) {
+    if (this.path.length === 0) return false;
+    const next = this.path[0];
+    const tx = next.x * CELL + CELL / 2, ty = next.y * CELL + CELL / 2;
+    const dx = tx - this.px, dy = ty - this.py;
+    const dist = Math.hypot(dx, dy);
+    const step = this.speed * dt / 1000;
+    if (dist <= step || dist === 0) {
+      this.px = tx; this.py = ty; this.gx = next.x; this.gy = next.y;
+      this.path.shift();
+    } else {
+      this.px += dx / dist * step;
+      this.py += dy / dist * step;
+      if (Math.abs(dx) > Math.abs(dy)) this.facing = dx > 0 ? 'right' : 'left';
+      else this.facing = dy > 0 ? 'down' : 'up';
+    }
+    return true;
+  }
+}
+
+class Player {
+  constructor(x, y) {
+    this.px = x * CELL + CELL / 2;
+    this.py = y * CELL + CELL / 2;
+    this.facing = 'down';
+    this.carrying = null;
+    this.speed = 180;
+  }
+  get cellX() { return Math.floor(this.px / CELL); }
+  get cellY() { return Math.floor(this.py / CELL); }
+  update(dt, world, keys) {
+    let vx = 0, vy = 0;
+    if (keys.has('w')) vy -= 1;
+    if (keys.has('s')) vy += 1;
+    if (keys.has('a')) vx -= 1;
+    if (keys.has('d')) vx += 1;
+    if (vx === 0 && vy === 0) return;
+    const len = Math.hypot(vx, vy);
+    vx /= len; vy /= len;
+    if (Math.abs(vx) > Math.abs(vy)) this.facing = vx > 0 ? 'right' : 'left';
+    else this.facing = vy > 0 ? 'down' : 'up';
+    const hw = 14, hh = 14;
+    const nx = this.px + vx * this.speed * dt / 1000;
+    const ny = this.py + vy * this.speed * dt / 1000;
+    if (this._free(world, nx, this.py, hw, hh)) this.px = nx;
+    if (this._free(world, this.px, ny, hw, hh)) this.py = ny;
+  }
+  _free(world, cx, cy, hw, hh) {
+    const pts = [[cx - hw, cy - hh], [cx + hw, cy - hh], [cx - hw, cy + hh], [cx + hw, cy + hh]];
+    for (const [px, py] of pts) {
+      if (px < 0 || py < 0 || px >= COLS * CELL || py >= ROWS * CELL) return false;
+      const gx = Math.floor(px / CELL), gy = Math.floor(py / CELL);
+      if (!world.isWalkable(gx, gy)) return false;
+    }
+    return true;
+  }
+}
+
+let _custId = 1;
+const THINK_TIME = 1500;
+const EAT_TIME = 4500;
+const MAX_QUEUE = 6;
+
+class Customer extends Mover {
+  constructor(x, y) {
+    super(x, y);
+    this.id = _custId++;
+    this.state = 'walkingToSeat';
+    this.timer = 0;
+    this.order = null;
+    this.chair = null;
+    this.table = null;
+    this.claimed = false;
+    this.payBooth = null;
+    this.queueSlot = null;
+    this.speed = 60;
+  }
+
+  update(dt, world, game) {
+    this.stepMove(dt);
+    switch (this.state) {
+      case 'waitingInLine':
+        break; // handled externally by Game's queue promotion/reflow
+      case 'walkingToSeat':
+        if (!this.hasPath) {
+          if (this.gx === this.chair.x && this.gy === this.chair.y) {
+            this.state = 'thinking';
+            this.timer = THINK_TIME;
+          } else {
+            this.setPath([{ x: this.chair.x, y: this.chair.y }]);
+          }
+        }
+        break;
+      case 'thinking':
+        this.timer -= dt;
+        if (this.timer <= 0) {
+          const enabled = RECIPES.filter(r => r.enabled);
+          this.order = (enabled.length ? enabled[Math.floor(Math.random() * enabled.length)] : RECIPES[0]).id;
+          this.state = 'waitingOrder';
+          this.claimed = false;
+        }
+        break;
+      case 'waitingOrder':
+      case 'waitingFood':
+        break;
+      case 'eating':
+        this.timer -= dt;
+        if (this.timer <= 0) {
+          this.table.dirty = true;
+          this.table.claimedDirty = false;
+          this.chair.occupied = null;
+          const booth = world.findObjects('payingBooth')[0];
+          const boothPath = booth ? world.pathToAdjacent(this.gx, this.gy, booth.x, booth.y) : null;
+          if (booth && boothPath) {
+            this.payBooth = booth;
+            this.state = 'walkingToPay';
+            this.setPath(boothPath);
+          } else {
+            this.state = 'leaving';
+            const ec = world.nearestEntranceCell(this.gx, this.gy);
+            const path = world.pathTo(this.gx, this.gy, ec.x, ec.y);
+            this.setPath(path || []);
+          }
+        }
+        break;
+      case 'walkingToPay':
+        if (!this.hasPath) {
+          const recipe = getRecipe(this.order);
+          this.payBooth.collected += recipe.price;
+          this.state = 'leaving';
+          const ec = world.nearestEntranceCell(this.gx, this.gy);
+          const path = world.pathTo(this.gx, this.gy, ec.x, ec.y);
+          this.setPath(path || []);
+        }
+        break;
+      case 'leaving':
+        if (!this.hasPath) this.state = 'done';
+        break;
+    }
+  }
+}
+
+let _staffId = 1;
+const NAMES = ['Alex', 'Sam', 'Jordan', 'Casey', 'Riley', 'Morgan', 'Taylor', 'Jamie', 'Drew', 'Skyler'];
+
+class StaffMember extends Mover {
+  constructor(x, y, role) {
+    super(x, y);
+    this.id = _staffId++;
+    this.role = role;
+    this.name = NAMES[Math.floor(Math.random() * NAMES.length)] + ' #' + this.id;
+    this.phase = 'idle';
+    this.busyTimer = 0;
+    this.task = {};
+    this.speed = 72;
+  }
+
+  update(dt, world, game) {
+    this.stepMove(dt);
+    if (this.role === 'waiter') this.updateWaiter(dt, world, game);
+    else if (this.role === 'chef') this.updateChef(dt, world, game);
+    else if (this.role === 'cleaner') this.updateCleaner(dt, world, game);
+  }
+
+  updateWaiter(dt, world, game) {
+    if (this.phase === 'idle') {
+      const stands = world.findObjects('orderStand');
+      for (const stand of stands) {
+        const dish = stand.ready.find(d => !d.claimedBy && d.chair.occupied && d.chair.occupied.state === 'waitingFood');
+        if (dish) {
+          const path = world.pathToAdjacent(this.gx, this.gy, stand.x, stand.y);
+          if (path) {
+            dish.claimedBy = this;
+            this.task = { type: 'deliver', dish, stand };
+            this.setPath(path);
+            this.phase = 'toStandPickup';
+            return;
+          }
+        }
+      }
+      const customer = world.customers.find(c => c.state === 'waitingOrder' && !c.claimed);
+      if (customer) {
+        const path = world.pathToAdjacent(this.gx, this.gy, customer.chair.x, customer.chair.y);
+        if (path) {
+          customer.claimed = true;
+          this.task = { type: 'takeOrder', customer };
+          this.setPath(path);
+          this.phase = 'toCustomerOrder';
+        }
+      }
+    } else if (this.phase === 'toStandPickup') {
+      if (!this.hasPath) {
+        // the dish only leaves the stand (and its badge count) once actually picked up here
+        const idx = this.task.stand.ready.indexOf(this.task.dish);
+        if (idx === -1) {
+          // someone else (e.g. the player) already collected it - look for other work
+          this.task = {};
+          this.phase = 'idle';
+        } else {
+          this.task.stand.ready.splice(idx, 1);
+          this.carrying = { kind: 'cooked', recipe: this.task.dish.recipe };
+          const target = this.task.dish.chair;
+          const path = world.pathToAdjacent(this.gx, this.gy, target.x, target.y);
+          this.setPath(path || []);
+          this.phase = 'toDeliver';
+        }
+      }
+    } else if (this.phase === 'toDeliver') {
+      if (!this.hasPath) {
+        const customer = this.task.dish.chair.occupied;
+        if (customer && customer.state === 'waitingFood') {
+          customer.state = 'eating';
+          customer.timer = EAT_TIME;
+        }
+        this.carrying = null;
+        this.phase = 'idle';
+      }
+    } else if (this.phase === 'toCustomerOrder') {
+      if (!this.hasPath) {
+        const customer = this.task.customer;
+        if (customer.state === 'waitingOrder') {
+          const stand = world.findObjects('orderStand')[0];
+          if (stand) {
+            stand.pending.push({ id: Date.now() + Math.random(), recipe: customer.order, chair: customer.chair, table: customer.table });
+            customer.state = 'waitingFood';
+            customer.claimed = false;
+          }
+        }
+        this.phase = 'idle';
+      }
+    }
+  }
+
+  updateChef(dt, world, game) {
+    if (this.phase === 'idle') {
+      const stand = world.findObjects('orderStand').find(s => s.pending.length > 0);
+      if (stand) {
+        const order = stand.pending[0];
+        const recipe = getRecipe(order.recipe);
+        if (recipe) {
+          const fridge = world.findObjects('fridge')[0];
+          const stove = world.findObjects('stove').find(s => !s.reservedBy);
+          if (fridge && stove) {
+            const path = world.pathToAdjacent(this.gx, this.gy, fridge.x, fridge.y, fridge);
+            if (path) {
+              stand.pending.shift();
+              stove.reservedBy = this;
+              this.task = { order, recipe, stove };
+              this.setPath(path);
+              this.phase = 'toFridge';
+            }
+          }
+        }
+      }
+    } else if (this.phase === 'toFridge') {
+      if (!this.hasPath) {
+        this.carrying = { kind: 'ingredient', recipe: this.task.recipe.id };
+        const stove = this.task.stove;
+        const path = world.pathToAdjacent(this.gx, this.gy, stove.x, stove.y, stove);
+        if (path) {
+          this.setPath(path);
+          this.phase = 'toStove';
+        } else {
+          // stove unreachable from its usable side; give up and return the order to the queue
+          const stand = world.findObjects('orderStand')[0];
+          if (stand) stand.pending.unshift(this.task.order);
+          stove.reservedBy = null;
+          this.carrying = null;
+          this.phase = 'idle';
+        }
+      }
+    } else if (this.phase === 'toStove') {
+      if (!this.hasPath) {
+        this.carrying = null;
+        this.task.stove.cooking = true;
+        this.task.stove.recipe = this.task.recipe.id;
+        this.task.stove.progress = 0;
+        this.phase = 'cooking';
+      }
+    } else if (this.phase === 'cooking') {
+      if (this.task.stove.ready) {
+        this.task.stove.ready = false;
+        this.task.stove.recipe = null;
+        this.carrying = { kind: 'cooked', recipe: this.task.recipe.id };
+        const stand = world.findObjects('orderStand')[0];
+        const path = world.pathToAdjacent(this.gx, this.gy, stand.x, stand.y);
+        this.task.stand = stand;
+        this.setPath(path || []);
+        this.phase = 'toStand';
+      }
+    } else if (this.phase === 'toStand') {
+      if (!this.hasPath) {
+        this.task.stand.ready.push({ recipe: this.task.order.recipe, chair: this.task.order.chair, table: this.task.order.table, claimedBy: null });
+        this.carrying = null;
+        this.task.stove.reservedBy = null;
+        this.phase = 'idle';
+      }
+    }
+  }
+
+  updateCleaner(dt, world, game) {
+    if (this.phase === 'idle') {
+      const table = world.findObjects('table').find(t => t.dirty && !t.claimedDirty);
+      if (table) {
+        table.claimedDirty = true;
+        this.task = { table };
+        const path = world.pathToAdjacent(this.gx, this.gy, table.x, table.y);
+        this.setPath(path || []);
+        this.phase = 'toTable';
+      }
+    } else if (this.phase === 'toTable') {
+      if (!this.hasPath) {
+        if (!this.task.table.dirty) {
+          // someone (e.g. the player) already cleaned it - look for other work
+          this.task.table.claimedDirty = false;
+          this.task = {};
+          this.phase = 'idle';
+          return;
+        }
+        this.task.table.dirty = false;
+        this.task.table.claimedDirty = false;
+        this.carrying = { kind: 'dirty' };
+        const sink = world.findObjects('sink')[0];
+        if (sink) {
+          const path = world.pathToAdjacent(this.gx, this.gy, sink.x, sink.y);
+          this.setPath(path || []);
+          this.phase = 'toSink';
+        } else {
+          this.carrying = null;
+          this.phase = 'idle';
+        }
+      }
+    } else if (this.phase === 'toSink') {
+      if (!this.hasPath) {
+        this.carrying = null;
+        this.phase = 'idle';
+      }
+    }
+  }
+}
+
+// ============================================================
+// UI (DOM wiring)
+// ============================================================
+
+function initUI(game) {
+  document.querySelectorAll('.tabBtn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tabBtn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tabPanel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+      if (btn.dataset.tab === 'objects') renderObjectsTable(game);
+    });
+  });
+
+  document.getElementById('closeMenu').addEventListener('click', () => game.closeMenu());
+
+  document.getElementById('toggleOpenBtn').addEventListener('click', () => {
+    game.isOpen = !game.isOpen;
+    updateOpenStatusUI(game);
+  });
+
+  renderPalette(game);
+  renderRecipeTable(game);
+  renderStaffHireButtons(game);
+  renderStaffTable(game);
+  renderObjectsTable(game);
+  updateMoneyUI(game);
+  updateStaffCountUI(game);
+  updateHoldingUI(game);
+  updateOpenStatusUI(game);
+}
+
+function updateOpenStatusUI(game) {
+  const btn = document.getElementById('toggleOpenBtn');
+  const status = document.getElementById('openStatusText');
+  if (game.isOpen) {
+    btn.textContent = '🔴 Close Restaurant';
+    status.textContent = 'Status: OPEN — customers may enter.';
+  } else {
+    btn.textContent = '🟢 Open Restaurant';
+    status.textContent = 'Status: CLOSED — no new customers will enter.';
+  }
+}
+
+function renderPalette(game) {
+  const el = document.getElementById('palette');
+  el.innerHTML = '';
+  ITEM_DEFS.forEach(def => {
+    const div = document.createElement('div');
+    div.className = 'paletteItem' + (game.selectedItem === def.type ? ' selected' : '');
+    div.innerHTML = `<span class="icon">${def.icon}</span>${def.name}<div class="cost">$${def.cost}</div>`;
+    div.addEventListener('click', () => {
+      game.selectedItem = (game.selectedItem === def.type) ? null : def.type;
+      renderPalette(game);
+    });
+    el.appendChild(div);
+  });
+}
+
+function renderRecipeTable(game) {
+  const tbody = document.querySelector('#recipeTable tbody');
+  tbody.innerHTML = '';
+  RECIPES.forEach(r => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${r.icon}</td><td>${r.name}</td><td>$${r.cost}</td><td>$${r.price}</td><td>${(r.cookTime / 1000).toFixed(1)}s</td>
+      <td><input type="checkbox" ${r.enabled ? 'checked' : ''} data-id="${r.id}" class="recipeToggle"></td>`;
+    tbody.appendChild(tr);
+  });
+  tbody.querySelectorAll('.recipeToggle').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const r = getRecipe(cb.dataset.id);
+      r.enabled = cb.checked;
+    });
+  });
+}
+
+const HIRE_BASE_COST = 10;
+const HIRE_ROLES = ['waiter', 'chef', 'cleaner'];
+const ROLE_ICON = { waiter: '🤵', chef: '👨‍🍳', cleaner: '🧹' };
+
+// cost scales 10x for every one of that role already hired: 10, 100, 1000, ...
+function getHireCost(game, role) {
+  const n = game.staff.filter(s => s.role === role).length;
+  return HIRE_BASE_COST * Math.pow(10, n);
+}
+
+function renderStaffHireButtons(game) {
+  const row = document.getElementById('hireRow');
+  row.innerHTML = '';
+  HIRE_ROLES.forEach(role => {
+    const cost = getHireCost(game, role);
+    const btn = document.createElement('button');
+    btn.textContent = `${ROLE_ICON[role]} Hire ${role} ($${cost})`;
+    btn.disabled = game.money < cost;
+    btn.addEventListener('click', () => game.hireStaff(role));
+    row.appendChild(btn);
+  });
+}
+
+function renderStaffTable(game) {
+  const tbody = document.querySelector('#staffTable tbody');
+  tbody.innerHTML = '';
+  game.staff.forEach(s => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${s.name}</td><td>${ROLE_ICON[s.role]} ${s.role}</td><td></td>`;
+    const fireBtn = document.createElement('button');
+    fireBtn.textContent = 'Fire';
+    fireBtn.className = 'smallBtn';
+    fireBtn.addEventListener('click', () => game.fireStaff(s.id));
+    tr.children[2].appendChild(fireBtn);
+    tbody.appendChild(tr);
+  });
+}
+
+const SIDE_ARROW = { up: '↑', down: '↓', left: '←', right: '→' };
+const ROTATE_ORDER = ['up', 'right', 'down', 'left'];
+
+function renderObjectsTable(game) {
+  const tbody = document.querySelector('#objectsTable tbody');
+  tbody.innerHTML = '';
+  game.world.objects.forEach(obj => {
+    const def = getItemDef(obj.type);
+    const label = SINGLE_SIDE_TYPES.has(obj.type) ? `${def.name} (usable from ${SIDE_ARROW[obj.side]})` : def.name;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${def.icon}</td><td>${label}</td><td>(${obj.x}, ${obj.y})</td><td></td>`;
+    const actions = tr.children[3];
+
+    if (SINGLE_SIDE_TYPES.has(obj.type)) {
+      const rotateBtn = document.createElement('button');
+      rotateBtn.textContent = 'Rotate';
+      rotateBtn.className = 'smallBtn';
+      rotateBtn.addEventListener('click', () => {
+        const i = ROTATE_ORDER.indexOf(obj.side);
+        obj.side = ROTATE_ORDER[(i + 1) % ROTATE_ORDER.length];
+        renderObjectsTable(game);
+      });
+      actions.appendChild(rotateBtn);
+    }
+
+    const btn = document.createElement('button');
+    btn.textContent = 'Pick up';
+    btn.className = 'smallBtn';
+    const canRemove = game.canRemoveObject(obj);
+    const alreadyHolding = !!game.heldObject;
+    if (!canRemove || alreadyHolding) {
+      btn.disabled = true;
+      btn.title = alreadyHolding ? 'Already holding something' : 'In use — cannot pick up right now';
+    }
+    btn.addEventListener('click', () => {
+      game.evictCustomersForObject(obj);
+      game.world.removeAt(obj.x, obj.y);
+      game.heldObject = obj;
+      updateHoldingUI(game);
+      renderObjectsTable(game);
+    });
+    actions.appendChild(btn);
+    tbody.appendChild(tr);
+  });
+  if (game.world.objects.length === 0 && game.storedItems.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="color:#a99c86;">Nothing placed yet.</td></tr>';
+  }
+
+  game.storedItems.forEach((obj, i) => {
+    const def = getItemDef(obj.type);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${def.icon}</td><td>${def.name} (in storage)</td><td>—</td><td></td>`;
+    const btn = document.createElement('button');
+    btn.textContent = 'Place';
+    btn.className = 'smallBtn';
+    btn.disabled = !!game.heldObject;
+    btn.addEventListener('click', () => {
+      game.storedItems.splice(i, 1);
+      game.heldObject = obj;
+      updateHoldingUI(game);
+      renderObjectsTable(game);
+    });
+    tr.children[3].appendChild(btn);
+    tbody.appendChild(tr);
+  });
+}
+
+function updateMoneyUI(game) {
+  document.getElementById('moneyVal').textContent = game.money;
+}
+
+function updateStaffCountUI(game) {
+  const counts = { waiter: 0, chef: 0, cleaner: 0 };
+  game.staff.forEach(s => counts[s.role]++);
+  document.getElementById('staffCount').textContent =
+    `🤵 ${counts.waiter}  👨‍🍳 ${counts.chef}  🧹 ${counts.cleaner}`;
+}
+
+function updateHoldingUI(game) {
+  const info = document.getElementById('holdingInfo');
+  if (game.heldObject) {
+    document.getElementById('holdingName').textContent = getItemDef(game.heldObject.type).name;
+    info.classList.remove('hidden');
+  } else if (game.holdingStaffSpawn) {
+    document.getElementById('holdingName').textContent = 'staff spawn point';
+    info.classList.remove('hidden');
+  } else {
+    info.classList.add('hidden');
+  }
+}
+
+// ============================================================
+// MAIN GAME: setup, input, build/move system, loop, rendering
+// ============================================================
+
+class Game {
+  constructor() {
+    this.world = new World();
+    this.money = 0;
+    this.staff = [];
+    this.menuOpen = false;
+    this.selectedItem = null;
+    this.heldObject = null;
+    this.holdingStaffSpawn = false;
+    this.storedItems = [];
+    this.contextMenuTarget = null; // object the open right-click menu refers to
+    this.mouse = { gx: -1, gy: -1 }; // last known mouse position, in grid cells
+    this.keys = new Set();
+    this.spawnTimer = 3000;
+    this.isOpen = true;
+
+    this.world.customers = [];
+    this.setupLevel();
+    this.player = new Player(8, 7);
+  }
+
+  setupLevel() {
+    const w = this.world;
+    w.place(createObject('fridge'), 5, 5);
+    w.place(createObject('stove'), 6, 5);
+    w.place(createObject('orderStand'), 7, 5);
+    w.place(createObject('sink'), 8, 5);
+    w.place(createObject('payingBooth'), 9, 5);
+
+    w.place(createObject('chair'), 6, 6);
+    w.place(createObject('table'), 6, 7);
+    w.place(createObject('chair'), 6, 8);
+  }
+
+  addMoney(amount) {
+    this.money += amount;
+    updateMoneyUI(this);
+    renderStaffHireButtons(this);
+  }
+
+  openMenu() {
+    this.menuOpen = true;
+    document.getElementById('menu').classList.remove('hidden');
+  }
+  closeMenu() {
+    this.menuOpen = false;
+    document.getElementById('menu').classList.add('hidden');
+  }
+  toggleMenu() {
+    if (this.menuOpen) this.closeMenu(); else this.openMenu();
+  }
+
+  hireStaff(role) {
+    const cost = getHireCost(this, role);
+    if (this.money < cost) return;
+    this.addMoney(-cost);
+    const spot = this.findSpawnSpot();
+    const s = new StaffMember(spot.x, spot.y, role);
+    this.staff.push(s);
+    renderStaffTable(this);
+    updateStaffCountUI(this);
+    renderStaffHireButtons(this);
+  }
+
+  fireStaff(id) {
+    const s = this.staff.find(s => s.id === id);
+    if (s && s.task && s.task.stove) s.task.stove.reservedBy = null;
+    this.staff = this.staff.filter(s => s.id !== id);
+    renderStaffTable(this);
+    updateStaffCountUI(this);
+    renderStaffHireButtons(this);
+  }
+
+  findSpawnSpot() {
+    const s = this.world.staffSpawn;
+    if (this.world.isWalkable(s.x, s.y)) return { x: s.x, y: s.y };
+    for (let y = 0; y < INTERIOR_ROWS; y++) {
+      for (let x = 0; x < COLS; x++) {
+        if (this.world.isWalkable(x, y) && this.world.isRoomUnlocked(x, y)) return { x, y };
+      }
+    }
+    return { x: 0, y: 0 };
+  }
+
+  // furniture mid-use by equipment/money (not customers) still can't be grabbed
+  canRemoveObject(obj) {
+    if (obj.type === 'stove' && obj.cooking) return false;
+    if (obj.type === 'orderStand' && (obj.pending.length || obj.ready.length)) return false;
+    if (obj.type === 'payingBooth' && obj.collected > 0) return false;
+    return true;
+  }
+
+  // customers occupying a chair/table being moved just leave immediately, unpaid
+  forceCustomerLeave(cust) {
+    if (cust.chair) cust.chair.occupied = null;
+    cust.chair = null;
+    cust.table = null;
+    cust.state = 'leaving';
+    const ec = this.world.nearestEntranceCell(cust.gx, cust.gy);
+    const path = this.world.pathTo(cust.gx, cust.gy, ec.x, ec.y);
+    cust.setPath(path || []);
+  }
+
+  evictCustomersForObject(obj) {
+    if (obj.type === 'chair' && obj.occupied) {
+      this.forceCustomerLeave(obj.occupied);
+    }
+    if (obj.type === 'table') {
+      this.world.customers
+        .filter(c => c.table === obj && c.state !== 'done')
+        .forEach(c => this.forceCustomerLeave(c));
+    }
+  }
+
+  unlockRoom(room) {
+    if (room.unlocked || this.money < room.price) return false;
+    this.addMoney(-room.price);
+    room.unlocked = true;
+    return true;
+  }
+
+  trySpawnGroup() {
+    if (!this.isOpen) return;
+    const groupSize = 1 + Math.floor(Math.random() * 6); // 1-6 people at once
+    let freeSeats = this.world.chairsForTables().filter(ct => !ct.chair.occupied && !ct.table.dirty);
+    let waitingCount = this.world.customers.filter(c => c.state === 'waitingInLine').length;
+    for (let i = 0; i < groupSize; i++) {
+      if (freeSeats.length > 0) {
+        const idx = Math.floor(Math.random() * freeSeats.length);
+        const seat = freeSeats.splice(idx, 1)[0];
+        this.spawnSeatedCustomer(seat);
+      } else if (waitingCount < MAX_QUEUE) {
+        this.spawnWaitingCustomer(waitingCount);
+        waitingCount++;
+      } else {
+        break; // line is full, rest of the group is turned away
+      }
+    }
+  }
+
+  spawnSeatedCustomer(seat) {
+    const entrance = this.world.randomEntranceCell();
+    const path = this.world.pathToAdjacent(entrance.x, entrance.y, seat.chair.x, seat.chair.y);
+    if (!path) return;
+    const c = new Customer(entrance.x, entrance.y);
+    c.chair = seat.chair;
+    c.table = seat.table;
+    seat.chair.occupied = c;
+    c.setPath(path);
+    this.world.customers.push(c);
+  }
+
+  spawnWaitingCustomer(queueIndex) {
+    const entrance = this.world.randomEntranceCell();
+    const spot = this.world.queueSpot(queueIndex);
+    const path = this.world.pathTo(entrance.x, entrance.y, spot.x, spot.y);
+    const c = new Customer(entrance.x, entrance.y);
+    c.state = 'waitingInLine';
+    c.queueSlot = queueIndex;
+    c.setPath(path || []);
+    this.world.customers.push(c);
+  }
+
+  promoteWaitingCustomers() {
+    const waiting = this.world.customers.filter(c => c.state === 'waitingInLine').sort((a, b) => a.queueSlot - b.queueSlot);
+    if (waiting.length === 0) return;
+    const freeSeats = this.world.chairsForTables().filter(ct => !ct.chair.occupied && !ct.table.dirty);
+    let promoted = false;
+    for (const seat of freeSeats) {
+      if (waiting.length === 0) break;
+      const cust = waiting.shift();
+      seat.chair.occupied = cust;
+      cust.chair = seat.chair;
+      cust.table = seat.table;
+      cust.queueSlot = null;
+      cust.state = 'walkingToSeat';
+      const path = this.world.pathToAdjacent(cust.gx, cust.gy, seat.chair.x, seat.chair.y);
+      cust.setPath(path || []);
+      promoted = true;
+    }
+    if (promoted) this.reflowQueue();
+  }
+
+  reflowQueue() {
+    const waiting = this.world.customers.filter(c => c.state === 'waitingInLine').sort((a, b) => a.queueSlot - b.queueSlot);
+    waiting.forEach((c, i) => {
+      if (c.queueSlot !== i) {
+        c.queueSlot = i;
+        const spot = this.world.queueSpot(i);
+        const path = this.world.pathTo(c.gx, c.gy, spot.x, spot.y);
+        c.setPath(path || []);
+      }
+    });
+  }
+
+  interact() {
+    const world = this.world;
+    const player = this.player;
+    const cx = player.cellX, cy = player.cellY;
+    for (const d of DIRS) {
+      const obj = world.cellAt(cx + d.x, cy + d.y);
+      if (!obj) continue;
+      // single-side appliances (stove/fridge) only respond from their designated side
+      if (SINGLE_SIDE_TYPES.has(obj.type) && OPPOSITE_DIR[d.name] !== obj.side) continue;
+      if (this.tryInteractWith(obj)) return;
+    }
+  }
+
+  // returns true if an action was actually performed on obj
+  tryInteractWith(obj) {
+    const world = this.world;
+    const player = this.player;
+
+    if (obj.type === 'chair' && obj.occupied) {
+      const customer = obj.occupied;
+      if (customer.state === 'waitingOrder' && !player.carrying) {
+        const stand = world.findObjects('orderStand')[0];
+        if (!stand) return false;
+        stand.pending.push({ recipe: customer.order, chair: customer.chair, table: customer.table });
+        customer.state = 'waitingFood';
+        return true;
+      }
+      if (customer.state === 'waitingFood' && player.carrying && player.carrying.kind === 'cooked' &&
+          player.carrying.chair === customer.chair) {
+        customer.state = 'eating';
+        customer.timer = EAT_TIME;
+        player.carrying = null;
+        return true;
+      }
+      return false;
+    }
+
+    if (obj.type === 'payingBooth' && obj.collected > 0) {
+      this.addMoney(obj.collected);
+      obj.collected = 0;
+      return true;
+    }
+
+    if (obj.type === 'fridge') {
+      if (!player.carrying) {
+        const stand = world.findObjects('orderStand').find(s => s.pending.length > 0);
+        if (!stand) return false;
+        const order = stand.pending.shift();
+        player.carrying = { kind: 'ingredient', recipe: order.recipe, chair: order.chair, table: order.table };
+        return true;
+      }
+      if (player.carrying.kind === 'ingredient') {
+        // put the ingredient back so the order returns to the queue and the player's hands are free
+        const stand = world.findObjects('orderStand')[0];
+        if (stand) {
+          stand.pending.unshift({ recipe: player.carrying.recipe, chair: player.carrying.chair, table: player.carrying.table });
+        }
+        player.carrying = null;
+        return true;
+      }
+      return false;
+    }
+
+    if (obj.type === 'stove') {
+      if (player.carrying && player.carrying.kind === 'ingredient' && !obj.cooking && !obj.ready && !obj.reservedBy) {
+        obj.cooking = true;
+        obj.recipe = player.carrying.recipe;
+        obj.progress = 0;
+        obj.reservedBy = 'player';
+        obj.orderChair = player.carrying.chair;
+        obj.orderTable = player.carrying.table;
+        player.carrying = null;
+        return true;
+      }
+      if (!player.carrying && obj.ready) {
+        player.carrying = { kind: 'cooked', recipe: obj.recipe, chair: obj.orderChair, table: obj.orderTable };
+        obj.ready = false;
+        obj.recipe = null;
+        obj.reservedBy = null;
+        obj.orderChair = null;
+        obj.orderTable = null;
+        return true;
+      }
+      if (player.carrying && player.carrying.kind === 'cooked' && !obj.cooking && !obj.ready && !obj.reservedBy) {
+        // put the cooked dish back on a free stove so the player's hands are free
+        obj.ready = true;
+        obj.recipe = player.carrying.recipe;
+        obj.orderChair = player.carrying.chair;
+        obj.orderTable = player.carrying.table;
+        obj.reservedBy = 'player';
+        player.carrying = null;
+        return true;
+      }
+      return false;
+    }
+
+    if (obj.type === 'orderStand') {
+      if (player.carrying && player.carrying.kind === 'cooked') {
+        obj.ready.push({ recipe: player.carrying.recipe, chair: player.carrying.chair, table: player.carrying.table, claimedBy: null });
+        player.carrying = null;
+        return true;
+      }
+      if (!player.carrying && obj.ready.length) {
+        const dish = obj.ready.shift();
+        player.carrying = { kind: 'cooked', recipe: dish.recipe, chair: dish.chair, table: dish.table };
+        return true;
+      }
+      return false;
+    }
+
+    if (obj.type === 'table' && obj.dirty && !player.carrying) {
+      obj.dirty = false;
+      obj.claimedDirty = false;
+      player.carrying = { kind: 'dirty' };
+      return true;
+    }
+
+    if (obj.type === 'sink' && player.carrying && player.carrying.kind === 'dirty') {
+      player.carrying = null;
+      return true;
+    }
+
+    return false;
+  }
+
+  update(dt) {
+    this.player.update(dt, this.world, this.keys);
+
+    for (const stove of this.world.findObjects('stove')) {
+      if (stove.cooking) {
+        const recipe = getRecipe(stove.recipe);
+        stove.progress += dt;
+        if (recipe && stove.progress >= recipe.cookTime) {
+          stove.cooking = false;
+          stove.ready = true;
+        }
+      }
+    }
+
+    for (const s of this.staff) s.update(dt, this.world, this);
+
+    for (const c of this.world.customers) c.update(dt, this.world, this);
+    this.world.customers = this.world.customers.filter(c => c.state !== 'done');
+
+    this.promoteWaitingCustomers();
+
+    this.spawnTimer -= dt;
+    if (this.spawnTimer <= 0) {
+      this.trySpawnGroup();
+      this.spawnTimer = 6000 + Math.random() * 6000;
+    }
+  }
+}
+
+const canvas = document.getElementById('gameCanvas');
+canvas.width = COLS * CELL;
+canvas.height = ROWS * CELL;
+const ctx = canvas.getContext('2d');
+
+const game = new Game();
+initUI(game);
+
+function cellFromEvent(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const mx = (e.clientX - rect.left) * scaleX;
+  const my = (e.clientY - rect.top) * scaleY;
+  return { gx: Math.floor(mx / CELL), gy: Math.floor(my / CELL) };
+}
+
+function closeContextMenu() {
+  document.getElementById('contextMenu').classList.add('hidden');
+  game.contextMenuTarget = null;
+}
+
+document.addEventListener('click', (e) => {
+  if (e.target.tagName === 'BUTTON') e.target.blur();
+  const menu = document.getElementById('contextMenu');
+  if (!menu.classList.contains('hidden') && !menu.contains(e.target)) {
+    closeContextMenu();
+  }
+});
+
+document.querySelector('#contextMenu [data-action="move"]').addEventListener('click', () => {
+  const target = game.contextMenuTarget;
+  if (target === 'staffSpawn') {
+    game.holdingStaffSpawn = true;
+  } else if (target) {
+    game.evictCustomersForObject(target);
+    game.world.removeAt(target.x, target.y);
+    game.heldObject = target;
+  }
+  updateHoldingUI(game);
+  renderObjectsTable(game);
+  closeContextMenu();
+});
+
+document.querySelector('#contextMenu [data-action="rotate"]').addEventListener('click', () => {
+  const target = game.contextMenuTarget;
+  if (target && target !== 'staffSpawn' && SINGLE_SIDE_TYPES.has(target.type)) {
+    const i = ROTATE_ORDER.indexOf(target.side);
+    target.side = ROTATE_ORDER[(i + 1) % ROTATE_ORDER.length];
+    renderObjectsTable(game);
+  }
+  closeContextMenu();
+});
+
+document.querySelector('#contextMenu [data-action="store"]').addEventListener('click', () => {
+  const target = game.contextMenuTarget;
+  if (target && target !== 'staffSpawn') {
+    game.evictCustomersForObject(target);
+    game.world.removeAt(target.x, target.y);
+    game.storedItems.push(target);
+    renderObjectsTable(game);
+  }
+  closeContextMenu();
+});
+
+document.querySelector('#contextMenu [data-action="sell"]').addEventListener('click', () => {
+  const target = game.contextMenuTarget;
+  if (target && target !== 'staffSpawn') {
+    game.evictCustomersForObject(target);
+    game.world.removeAt(target.x, target.y);
+    const refund = Math.floor(getItemDef(target.type).cost / 2);
+    game.addMoney(refund);
+    renderObjectsTable(game);
+  }
+  closeContextMenu();
+});
+
+window.addEventListener('keydown', (e) => {
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(tag)) return;
+  const k = e.key.toLowerCase();
+  if (['w', 'a', 's', 'd'].includes(k)) {
+    game.keys.add(k);
+  } else if (k === ' ') {
+    e.preventDefault();
+    if (!e.repeat) game.interact();
+  } else if (k === 'e') {
+    game.toggleMenu();
+  } else if (k === 'escape') {
+    if (game.heldObject) {
+      game.world.place(game.heldObject, game.heldObject.x, game.heldObject.y);
+      game.heldObject = null;
+      updateHoldingUI(game);
+      renderObjectsTable(game);
+    } else if (game.holdingStaffSpawn) {
+      game.holdingStaffSpawn = false;
+      updateHoldingUI(game);
+    }
+    closeContextMenu();
+  }
+});
+window.addEventListener('keyup', (e) => {
+  const k = e.key.toLowerCase();
+  if (['w', 'a', 's', 'd'].includes(k)) game.keys.delete(k);
+});
+
+canvas.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  if (game.heldObject || game.holdingStaffSpawn) return;
+  const { gx, gy } = cellFromEvent(e);
+  if (!game.world.inBounds(gx, gy)) return;
+
+  const obj = game.world.cellAt(gx, gy);
+  const isSpawnCell = game.world.staffSpawn.x === gx && game.world.staffSpawn.y === gy;
+  if (!obj && !isSpawnCell) return;
+
+  game.contextMenuTarget = obj || 'staffSpawn';
+  const menu = document.getElementById('contextMenu');
+  const rotateBtn = menu.querySelector('[data-action="rotate"]');
+  const storeBtn = menu.querySelector('[data-action="store"]');
+  const sellBtn = menu.querySelector('[data-action="sell"]');
+
+  if (!obj) { // staff spawn marker: only "move" makes sense
+    rotateBtn.classList.add('hidden');
+    storeBtn.classList.add('hidden');
+    sellBtn.classList.add('hidden');
+  } else {
+    rotateBtn.classList.toggle('hidden', !SINGLE_SIDE_TYPES.has(obj.type));
+    storeBtn.classList.remove('hidden');
+    sellBtn.classList.remove('hidden');
+  }
+
+  const gaRect = canvas.parentElement.getBoundingClientRect();
+  menu.style.left = (e.clientX - gaRect.left) + 'px';
+  menu.style.top = (e.clientY - gaRect.top) + 'px';
+  menu.classList.remove('hidden');
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  game.mouse = cellFromEvent(e);
+});
+
+canvas.addEventListener('click', (e) => {
+  const menu = document.getElementById('contextMenu');
+  if (!menu.classList.contains('hidden')) {
+    closeContextMenu();
+    return; // this click just dismisses the menu
+  }
+
+  const { gx, gy } = cellFromEvent(e);
+  if (!game.world.inBounds(gx, gy)) return;
+
+  if (game.holdingStaffSpawn) {
+    if (game.world.canBuildAt(gx, gy)) {
+      game.world.staffSpawn = { x: gx, y: gy };
+      game.holdingStaffSpawn = false;
+      updateHoldingUI(game);
+    }
+    return;
+  }
+
+  if (game.heldObject) {
+    if (game.world.canBuildAt(gx, gy)) {
+      game.world.place(game.heldObject, gx, gy);
+      game.heldObject = null;
+      updateHoldingUI(game);
+      renderObjectsTable(game);
+    }
+    return;
+  }
+
+  if (game.selectedItem) {
+    const def = getItemDef(game.selectedItem);
+    if (game.world.canBuildAt(gx, gy) && game.money >= def.cost) {
+      const obj = createObject(game.selectedItem);
+      game.world.place(obj, gx, gy);
+      game.addMoney(-def.cost);
+      renderObjectsTable(game);
+    }
+    return;
+  }
+
+  const room = game.world.roomAt(gx, gy);
+  if (room && !room.unlocked) {
+    game.unlockRoom(room);
+  }
+});
+
+const OBJECT_STYLE = {
+  fridge:     { color: '#bfe3ea', icon: '🧊' },
+  stove:      { color: '#e0a678', icon: '🔥' },
+  orderStand: { color: '#d8c98a', icon: '🧾' },
+  sink:       { color: '#a9c9d8', icon: '🚰' },
+  payingBooth:{ color: '#f2d675', icon: '💳' },
+  table:      { color: '#8a6b3f', icon: '🍽️' },
+  chair:      { color: '#6b5a3f', icon: '🪑' },
+  wall:       { color: '#3a332a', icon: '🧱' },
+};
+const ROLE_COLOR = { waiter: '#3fae55', chef: '#f5f5f5', cleaner: '#1a1a1a' };
+const ROLE_OUTLINE = { waiter: '#245c30', chef: '#999999', cleaner: '#666666' };
+const PLAYER_COLOR = '#3f7fff';
+const PLAYER_OUTLINE = '#1f3f99';
+const CUSTOMER_COLOR = '#9e9e9e';
+const CUSTOMER_OUTLINE = '#5a5a5a';
+
+function drawGrid() {
+  // sidewalk row (outside the building) gets a distinct background
+  ctx.fillStyle = 'rgba(30, 27, 22, 0.45)';
+  ctx.fillRect(0, INTERIOR_ROWS * CELL, COLS * CELL, CELL);
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x <= COLS; x++) {
+    ctx.beginPath();
+    ctx.moveTo(x * CELL, 0);
+    ctx.lineTo(x * CELL, ROWS * CELL);
+    ctx.stroke();
+  }
+  for (let y = 0; y <= ROWS; y++) {
+    ctx.beginPath();
+    ctx.moveTo(0, y * CELL);
+    ctx.lineTo(COLS * CELL, y * CELL);
+    ctx.stroke();
+  }
+
+  // room boundaries
+  ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+  ctx.lineWidth = 2;
+  for (let rx = 0; rx <= ROOM_GRID; rx++) {
+    ctx.beginPath();
+    ctx.moveTo(rx * ROOM_SIZE * CELL, 0);
+    ctx.lineTo(rx * ROOM_SIZE * CELL, INTERIOR_ROWS * CELL);
+    ctx.stroke();
+  }
+  for (let ry = 0; ry <= ROOM_GRID; ry++) {
+    ctx.beginPath();
+    ctx.moveTo(0, ry * ROOM_SIZE * CELL);
+    ctx.lineTo(COLS * CELL, ry * ROOM_SIZE * CELL);
+    ctx.stroke();
+  }
+
+  for (const room of game.world.rooms) {
+    if (room.unlocked) continue;
+    const px = room.x0 * CELL, py = room.y0 * CELL;
+    const w = ROOM_SIZE * CELL, h = ROOM_SIZE * CELL;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(px, py, w, h);
+    ctx.font = '28px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🔒', px + w / 2, py + h / 2 - 12);
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillStyle = '#ffd76b';
+    ctx.fillText('$' + room.price, px + w / 2, py + h / 2 + 16);
+  }
+
+  ctx.fillStyle = 'rgba(120, 200, 120, 0.25)';
+  for (const e of game.world.entranceCells) {
+    ctx.fillRect(e.x * CELL, e.y * CELL, CELL, CELL);
+  }
+
+  const spawn = game.world.staffSpawn;
+  ctx.fillStyle = 'rgba(160, 160, 160, 0.35)';
+  ctx.fillRect(spawn.x * CELL, spawn.y * CELL, CELL, CELL);
+}
+
+function drawObject(obj) {
+  const style = OBJECT_STYLE[obj.type];
+  const px = obj.x * CELL, py = obj.y * CELL;
+  ctx.fillStyle = style.color;
+  roundRect(px + 3, py + 3, CELL - 6, CELL - 6, 8);
+  ctx.fill();
+  ctx.font = '24px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(style.icon, px + CELL / 2, py + CELL / 2);
+
+  if (obj.type === 'stove' && (obj.cooking || obj.ready)) {
+    const recipe = getRecipe(obj.recipe);
+    const pct = obj.ready ? 1 : Math.min(1, obj.progress / (recipe ? recipe.cookTime : 1));
+    ctx.fillStyle = '#2a2a2a';
+    ctx.fillRect(px + 4, py + CELL - 10, CELL - 8, 5);
+    ctx.fillStyle = obj.ready ? '#6fce6f' : '#ffd76b';
+    ctx.fillRect(px + 4, py + CELL - 10, (CELL - 8) * pct, 5);
+    if (obj.ready) {
+      ctx.font = '14px sans-serif';
+      ctx.fillText('✅', px + CELL - 10, py + 10);
+    }
+  }
+
+  if (obj.type === 'orderStand') {
+    if (obj.pending.length > 0) {
+      badge(px + 12, py + 10, obj.pending.length, '#e05252');
+    }
+    if (obj.ready.length > 0) {
+      badge(px + CELL - 12, py + 10, obj.ready.length, '#4caf50');
+    }
+  }
+
+  if (obj.type === 'table' && obj.dirty) {
+    ctx.font = '16px sans-serif';
+    ctx.fillText('🍴', px + CELL / 2, py + 12);
+  }
+
+  if (obj.type === 'payingBooth' && obj.collected > 0) {
+    badge(px + CELL - 12, py + 10, '$' + obj.collected, '#2e7d32');
+  }
+
+  if (SINGLE_SIDE_TYPES.has(obj.type)) {
+    drawSideIndicator(px, py, obj.side);
+  }
+}
+
+function drawSideIndicator(px, py, side) {
+  const cx = px + CELL / 2, cy = py + CELL / 2;
+  const points = {
+    up:    [[cx - 7, py + 6], [cx + 7, py + 6], [cx, py - 4]],
+    down:  [[cx - 7, py + CELL - 6], [cx + 7, py + CELL - 6], [cx, py + CELL + 4]],
+    left:  [[px + 6, cy - 7], [px + 6, cy + 7], [px - 4, cy]],
+    right: [[px + CELL - 6, cy - 7], [px + CELL - 6, cy + 7], [px + CELL + 4, cy]],
+  };
+  const tri = points[side];
+  if (!tri) return;
+  ctx.beginPath();
+  ctx.moveTo(tri[0][0], tri[0][1]);
+  ctx.lineTo(tri[1][0], tri[1][1]);
+  ctx.lineTo(tri[2][0], tri[2][1]);
+  ctx.closePath();
+  ctx.fillStyle = '#ffd76b';
+  ctx.fill();
+}
+
+function badge(x, y, num, color) {
+  ctx.beginPath();
+  ctx.arc(x, y, 9, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(String(num), x, y + 1);
+}
+
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function drawCarried(px, py, carrying) {
+  if (!carrying) return;
+  const icons = { ingredient: '🥕', cooked: '🍚', dirty: '🍴' };
+  ctx.font = '16px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(icons[carrying.kind] || '?', px, py - 22);
+}
+
+function drawCharacter(px, py, color, outline, carrying, label) {
+  ctx.beginPath();
+  ctx.arc(px, py, 15, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = outline;
+  ctx.stroke();
+  drawCarried(px, py, carrying);
+  if (label) {
+    ctx.font = '10px sans-serif';
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, px, py + 24);
+  }
+}
+
+function drawCustomer(c) {
+  let bubble = null;
+  if (c.state === 'thinking' || c.state === 'waitingOrder') bubble = '❗';
+  else if (c.state === 'waitingFood') bubble = '⏳';
+  drawCharacter(c.px, c.py, CUSTOMER_COLOR, CUSTOMER_OUTLINE, null);
+  if (c.state === 'waitingInLine') {
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#dfe6ee';
+    ctx.fillText('#' + (c.queueSlot + 1), c.px, c.py - 22);
+  } else if (bubble) {
+    ctx.font = 'bold 18px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = bubble === '❗' ? '#ffd76b' : '#dfe6ee';
+    ctx.fillText(bubble, c.px, c.py - 24);
+  }
+}
+
+function render() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawGrid();
+  for (const obj of game.world.objects) drawObject(obj);
+
+  const drawables = [
+    { py: game.player.py, draw: () => drawCharacter(game.player.px, game.player.py, PLAYER_COLOR, PLAYER_OUTLINE, game.player.carrying) },
+    ...game.world.customers.map(c => ({ py: c.py, draw: () => drawCustomer(c) })),
+    ...game.staff.map(s => ({ py: s.py, draw: () => drawCharacter(s.px, s.py, ROLE_COLOR[s.role], ROLE_OUTLINE[s.role], s.carrying, s.role) })),
+  ];
+  drawables.sort((a, b) => a.py - b.py);
+  for (const d of drawables) d.draw();
+
+  drawDragPreview();
+}
+
+function drawDragPreview() {
+  if (!game.heldObject && !game.holdingStaffSpawn) return;
+  const { gx, gy } = game.mouse;
+  if (gx < 0 || gy < 0) return;
+  const px = gx * CELL, py = gy * CELL;
+  const canDrop = game.holdingStaffSpawn
+    ? game.world.canBuildAt(gx, gy)
+    : game.world.canBuildAt(gx, gy);
+
+  ctx.save();
+  ctx.globalAlpha = 0.55;
+  ctx.strokeStyle = canDrop ? '#6fce6f' : '#e05252';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(px + 2, py + 2, CELL - 4, CELL - 4);
+
+  if (game.holdingStaffSpawn) {
+    ctx.fillStyle = 'rgba(160, 160, 160, 0.6)';
+    ctx.fillRect(px + 3, py + 3, CELL - 6, CELL - 6);
+  } else {
+    const style = OBJECT_STYLE[game.heldObject.type];
+    ctx.fillStyle = style.color;
+    roundRect(px + 3, py + 3, CELL - 6, CELL - 6, 8);
+    ctx.fill();
+    ctx.font = '24px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(style.icon, px + CELL / 2, py + CELL / 2);
+  }
+  ctx.restore();
+}
+
+let lastTime = performance.now();
+function loop(now) {
+  const dt = Math.min(50, now - lastTime);
+  lastTime = now;
+  game.update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
