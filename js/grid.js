@@ -1,11 +1,12 @@
-// Grid, world map (lots), pathfinding
+// Grid, world map, pathfinding — one open field, buildable everywhere
 
-const LOT_SIZE = 7;
-const LOTS_PER_SIDE = 3;
-const COLS = LOT_SIZE * LOTS_PER_SIDE; // 21
-const ROWS = LOT_SIZE * LOTS_PER_SIDE; // 21
-const CELL = 32;
-const MAX_QUEUE = 6;
+const COLS = 21;
+const ROWS = 21;
+const CELL = 40;
+const SCALE = CELL / 32; // grows the fixed-pixel visuals (characters, badges, text) along with the cell size
+
+// object types that never block movement — anyone can walk straight over them
+const WALKTHROUGH_TYPES = new Set(['door', 'chair']);
 
 const DIRS = [
   { x: 0, y: -1, name: 'up' },
@@ -26,27 +27,6 @@ function usableSides(obj) {
   return DIRS;
 }
 
-// the 8 lots surrounding the home lot (meta-grid coords, col/row 0-2). Diagonals
-// require both their adjacent side-lots to already be owned.
-const EXPANSION_LOTS = [
-  { key: 'N', label: 'North', col: 1, row: 0, requires: [] },
-  { key: 'S', label: 'South', col: 1, row: 2, requires: [] },
-  { key: 'W', label: 'West', col: 0, row: 1, requires: [] },
-  { key: 'E', label: 'East', col: 2, row: 1, requires: [] },
-  { key: 'NW', label: 'Northwest', col: 0, row: 0, requires: ['N', 'W'] },
-  { key: 'NE', label: 'Northeast', col: 2, row: 0, requires: ['N', 'E'] },
-  { key: 'SW', label: 'Southwest', col: 0, row: 2, requires: ['S', 'W'] },
-  { key: 'SE', label: 'Southeast', col: 2, row: 2, requires: ['S', 'E'] },
-];
-const LOT_BASE_COST = 100;
-const LOT_COST_MULTIPLIER = 3;
-
-// single escalating price for whichever expansion lot is purchased next
-function lotPurchaseCost(world) {
-  const owned = EXPANSION_LOTS.filter(l => world.lots[l.row][l.col]).length;
-  return LOT_BASE_COST * Math.pow(LOT_COST_MULTIPLIER, owned);
-}
-
 class World {
   constructor() {
     this.grid = [];
@@ -57,54 +37,66 @@ class World {
     }
     this.objects = [];
     this.customers = [];
-
-    // [row][col], meta-grid of lots; home (1,1) always owned
-    this.lots = [
-      [false, false, false],
-      [false, true, false],
-      [false, false, false],
-    ];
-
-    const homeX0 = LOT_SIZE, homeY0 = LOT_SIZE;
-    this.entranceCells = [
-      { x: homeX0 + 2, y: homeY0 + LOT_SIZE - 1 },
-      { x: homeX0 + 3, y: homeY0 + LOT_SIZE - 1 },
-    ];
+    this.water = new Set(); // "x,y" keys — irregular pond terrain, never walkable/buildable
   }
 
-  lotOwned(col, row) {
-    if (col < 0 || col > 2 || row < 0 || row > 2) return false;
-    return this.lots[row][col];
+  isWater(x, y) {
+    return this.water.has(x + ',' + y);
   }
 
-  lotOf(x, y) {
-    return { col: Math.floor(x / LOT_SIZE), row: Math.floor(y / LOT_SIZE) };
+  // grows a single irregular pond (capped at maxSize cells) on empty ground, via random
+  // blob growth from one seed cell — every water cell always touches another one
+  generateWater(maxSize) {
+    const size = 1 + Math.floor(Math.random() * maxSize);
+    let seed = null;
+    for (let attempt = 0; attempt < 200; attempt++) {
+      const x = Math.floor(Math.random() * COLS);
+      const y = Math.floor(Math.random() * ROWS);
+      if (this.grid[y][x] === null && !this.isWater(x, y)) { seed = { x, y }; break; }
+    }
+    if (!seed) return;
+
+    const blob = [seed];
+    const frontier = [seed];
+    while (blob.length < size && frontier.length > 0) {
+      const idx = Math.floor(Math.random() * frontier.length);
+      const cell = frontier[idx];
+      const dirs = DIRS.slice().sort(() => Math.random() - 0.5);
+      let grew = false;
+      for (const d of dirs) {
+        const nx = cell.x + d.x, ny = cell.y + d.y;
+        if (!this.inBounds(nx, ny)) continue;
+        if (this.grid[ny][nx] !== null || this.isWater(nx, ny)) continue;
+        if (blob.some(c => c.x === nx && c.y === ny)) continue;
+        const next = { x: nx, y: ny };
+        blob.push(next);
+        frontier.push(next);
+        grew = true;
+        break;
+      }
+      if (!grew) frontier.splice(idx, 1);
+    }
+
+    for (const c of blob) this.water.add(c.x + ',' + c.y);
   }
 
-  // fixed waiting-line cells: rightmost aligns under the rightmost entrance cell,
-  // extending left, one row below/outside the home lot
-  queueSpot(index) {
-    const front = this.entranceCells[this.entranceCells.length - 1];
-    return { x: front.x - index, y: front.y + 1 };
+  // the entrance is just the placed 'door' object (2x1) — no door placed means no entrance
+  get door() {
+    return this.findObjects('door')[0] || null;
+  }
+
+  get entranceCells() {
+    const door = this.door;
+    if (!door) return [];
+    return [{ x: door.x, y: door.y }, { x: door.x + 1, y: door.y }];
   }
 
   isReservedCell(x, y) {
-    if (this.entranceCells.some(e => e.x === x && e.y === y)) return true;
-    for (let i = 0; i < MAX_QUEUE; i++) {
-      const q = this.queueSpot(i);
-      if (q.x === x && q.y === y) return true;
-    }
-    return false;
+    return this.entranceCells.some(e => e.x === x && e.y === y);
   }
 
   inBounds(x, y) {
     return x >= 0 && x < COLS && y >= 0 && y < ROWS;
-  }
-
-  isLocked(x, y) {
-    if (this.isReservedCell(x, y)) return false;
-    const { col, row } = this.lotOf(x, y);
-    return !this.lotOwned(col, row);
   }
 
   cellAt(x, y) {
@@ -114,17 +106,34 @@ class World {
 
   isWalkable(x, y) {
     if (!this.inBounds(x, y)) return false;
-    if (this.grid[y][x] !== null) return false;
-    if (this.isLocked(x, y)) return false;
+    if (this.isWater(x, y)) return false;
+    const cell = this.grid[y][x];
+    if (cell !== null && !WALKTHROUGH_TYPES.has(cell.type)) return false;
     return true;
   }
 
-  // walkable AND not a reserved cell (entrance/queue) - used for build placement
+  // walkable, not a reserved cell (entrance), and not already occupied — used for build placement
   isBuildable(x, y) {
-    return this.isWalkable(x, y) && !this.isReservedCell(x, y);
+    return this.isWalkable(x, y) && !this.isReservedCell(x, y) && this.grid[y][x] === null;
+  }
+
+  // door-specific: needs both of its cells free
+  canPlaceDoor(x, y) {
+    return this.isBuildable(x, y) && this.isBuildable(x + 1, y);
   }
 
   place(obj, x, y) {
+    if (obj.type === 'door') {
+      const x2 = x + 1;
+      if (!this.inBounds(x, y) || !this.inBounds(x2, y)) return false;
+      if (this.grid[y][x] !== null || this.grid[y][x2] !== null) return false;
+      obj.x = x;
+      obj.y = y;
+      this.grid[y][x] = obj;
+      this.grid[y][x2] = obj;
+      this.objects.push(obj);
+      return true;
+    }
     if (!this.inBounds(x, y) || this.grid[y][x] !== null) return false;
     obj.x = x;
     obj.y = y;
@@ -136,7 +145,12 @@ class World {
   removeAt(x, y) {
     const obj = this.cellAt(x, y);
     if (!obj) return null;
-    this.grid[y][x] = null;
+    if (obj.type === 'door') {
+      this.grid[obj.y][obj.x] = null;
+      this.grid[obj.y][obj.x + 1] = null;
+    } else {
+      this.grid[y][x] = null;
+    }
     this.objects = this.objects.filter(o => o !== obj);
     return obj;
   }
@@ -146,12 +160,16 @@ class World {
   }
 
   randomEntranceCell() {
-    return this.entranceCells[Math.floor(Math.random() * this.entranceCells.length)];
+    const cells = this.entranceCells;
+    if (cells.length === 0) return null;
+    return cells[Math.floor(Math.random() * cells.length)];
   }
 
   nearestEntranceCell(fromX, fromY) {
-    let best = this.entranceCells[0], bestDist = Infinity;
-    for (const e of this.entranceCells) {
+    const cells = this.entranceCells;
+    if (cells.length === 0) return { x: fromX, y: fromY };
+    let best = cells[0], bestDist = Infinity;
+    for (const e of cells) {
       const d = Math.abs(e.x - fromX) + Math.abs(e.y - fromY);
       if (d < bestDist) { bestDist = d; best = e; }
     }
@@ -222,5 +240,18 @@ class World {
       }
     }
     return result;
+  }
+
+  tableOfChair(chair) {
+    for (const d of DIRS) {
+      const neighbor = this.cellAt(chair.x + d.x, chair.y + d.y);
+      if (neighbor && neighbor.type === 'table') return neighbor;
+    }
+    return null;
+  }
+
+  // every chair seated around the given table — lets one interaction serve the whole table
+  chairsOfTable(table) {
+    return this.findObjects('chair').filter(chair => this.tableOfChair(chair) === table);
   }
 }

@@ -34,11 +34,6 @@ html, body {
 }
 
 #money { font-weight: bold; color: #ffd76b; font-size: 18px; }
-#staffCount { color: #b7c9a8; font-size: 13px; }
-#hint { font-size: 12px; color: #b8ab94; }
-
-#holdingBar { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #ffd76b; }
-#holdingBar button { padding: 4px 10px; font-size: 12px; }
 
 #gameArea {
   position: relative;
@@ -82,61 +77,88 @@ canvas {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 640px;
-  max-width: 92vw;
-  max-height: 82vh;
+  width: 760px;
+  height: 560px;
+  max-width: 94vw;
+  max-height: 90vh;
   background: #2f2a22;
   border: 3px solid #8a6b3f;
   border-radius: 10px;
   box-shadow: 0 12px 40px rgba(0,0,0,0.6);
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   z-index: 50;
   overflow: hidden;
 }
 
 #menu.hidden { display: none; }
 
+/* sidebar: tabs listed vertically on the left */
 .menuHeader {
   display: flex;
+  flex-direction: column;
   background: #1f1b16;
-  border-bottom: 2px solid #8a6b3f;
-  flex-wrap: wrap;
+  border-right: 2px solid #8a6b3f;
+  width: 150px;
+  flex-shrink: 0;
+  overflow-y: auto;
 }
 
 .tabBtn {
-  flex: 1;
+  flex: none;
   background: none;
   border: none;
+  border-left: 3px solid transparent;
+  border-bottom: 1px solid #33291d;
   color: #d8c9ab;
-  padding: 12px 6px;
+  text-align: left;
+  padding: 12px 14px;
   font-size: 13px;
   cursor: pointer;
   white-space: nowrap;
 }
 
+.tabBtn:hover { background: #2a2419; }
+
 .tabBtn.active {
   background: #4a3d28;
   color: #ffd76b;
   font-weight: bold;
+  border-left-color: #ffd76b;
+}
+
+/* content: fixed-size pane, close button floats top-right, active panel scrolls internally */
+.menuContent {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 #closeMenu {
+  position: absolute;
+  top: 8px;
+  right: 8px;
   background: #6b2b2b;
   border: none;
   color: #fff;
-  width: 44px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   cursor: pointer;
-  font-size: 16px;
+  font-size: 14px;
+  border-radius: 6px;
+  z-index: 5;
 }
 
 .tabPanel {
   display: none;
-  padding: 14px 18px;
+  padding: 42px 18px 14px;
   overflow-y: auto;
 }
 
-.tabPanel.active { display: block; }
+.tabPanel.active { display: block; flex: 1; min-height: 0; }
 
 .tabHelp {
   font-size: 12px;
@@ -144,28 +166,38 @@ canvas {
   margin: 0 0 10px 0;
 }
 
+.tutorialList {
+  margin: 0 0 14px 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: #d8c9ab;
+  line-height: 1.6;
+}
+.tutorialList li { margin-bottom: 4px; }
+
 #palette {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(62px, 1fr));
+  gap: 6px;
   margin-bottom: 12px;
 }
 
 .paletteItem {
   background: #423a2c;
   border: 2px solid #6b5a3f;
-  border-radius: 8px;
-  padding: 10px;
+  border-radius: 6px;
+  padding: 6px 4px;
   text-align: center;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 10px;
+  line-height: 1.3;
   color: #f1e9dc;
 }
 
 .paletteItem:hover { border-color: #ffd76b; }
 .paletteItem.disabled { opacity: 0.4; cursor: not-allowed; }
-.paletteItem .icon { font-size: 26px; display: block; margin-bottom: 4px; }
-.paletteItem .cost { color: #ffd76b; font-size: 11px; }
+.paletteItem .icon { font-size: 18px; display: block; margin-bottom: 2px; }
+.paletteItem .cost { color: #ffd76b; font-size: 10px; }
 
 button {
   background: #4a3d28;
@@ -183,35 +215,92 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 
 th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #4a3d28; }
 th { color: #ffd76b; }
 
-#hireRow { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+#staffPanels { margin-bottom: 16px; }
 
-.smallBtn { padding: 4px 8px; font-size: 12px; }
+.rolePanel { margin-bottom: 14px; }
+.rolePanelHeader { font-weight: bold; color: #ffd76b; margin-bottom: 6px; font-size: 13px; }
+.rolePanelSlots { display: flex; flex-wrap: wrap; gap: 8px; }
 
-#shopMap {
-  display: grid;
-  grid-template-columns: repeat(3, 90px);
-  grid-template-rows: repeat(3, 90px);
-  gap: 8px;
-  justify-content: center;
-  margin: 10px 0;
-}
-
-.lotCell {
+.staffSlot {
+  width: 74px;
+  min-height: 74px;
   border-radius: 8px;
   border: 2px solid #6b5a3f;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
   text-align: center;
   padding: 4px;
-  gap: 4px;
+  gap: 2px;
+}
+.staffSlot.filled { background: #3f5a6b; border-color: #5c8aae; }
+.staffSlot .slotIcon { font-size: 20px; }
+.staffSlot .slotName { font-size: 10px; color: #f1e9dc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 66px; }
+.staffSlot .slotLevel { font-size: 10px; color: #ffd76b; }
+.staffSlot.locked { background: #241f1a; color: #6b6156; cursor: pointer; }
+.staffSlot.locked:hover { border-color: #ffd76b; }
+.staffSlot.locked.disabled { opacity: 0.5; cursor: not-allowed; }
+.staffSlot .slotCost { color: #ffd76b; font-size: 12px; }
+
+.smallBtn { padding: 4px 8px; font-size: 12px; }
+
+#ordersPanel {
+  position: fixed;
+  left: 16px;
+  top: 120px;
+  width: 220px;
+  max-height: 65vh;
+  background: #2f2a22;
+  border: 3px solid #8a6b3f;
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+  display: flex;
+  flex-direction: column;
+  z-index: 40;
+  overflow: hidden;
+}
+#ordersPanel.hidden { display: none; }
+
+.ordersPanelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #1f1b16;
+  border-bottom: 2px solid #8a6b3f;
+  padding: 8px 12px;
+  font-weight: bold;
+  color: #ffd76b;
+}
+.ordersPanelHeader button {
+  background: #6b2b2b;
+  border: none;
+  color: #fff;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  cursor: pointer;
+  font-size: 13px;
+  border-radius: 4px;
 }
 
-.lotCell.home { background: #4a6b3f; border-color: #7fae5c; font-weight: bold; }
-.lotCell.owned { background: #3f5a6b; border-color: #5c8aae; }
-.lotCell.buyable { background: #423a2c; cursor: pointer; }
-.lotCell.buyable:hover { border-color: #ffd76b; }
-.lotCell.locked { background: #241f1a; color: #6b6156; }
-.lotCell .lotCost { color: #ffd76b; font-size: 11px; }
+#ordersList {
+  padding: 10px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.orderRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  gap: 8px;
+}
+.orderReady { background: rgba(76, 175, 80, 0.25); border: 1px solid #4caf50; color: #cdeecb; }
+.orderPending { background: rgba(140, 140, 140, 0.22); border: 1px solid #6b6156; color: #cfc6b8; }
+.orderEmpty { color: #a99c86; font-size: 12px; padding: 6px; }

@@ -9,12 +9,15 @@
   <div id="app">
     <div id="hud">
       <div id="money">💰 <span id="moneyVal">0</span></div>
-      <div id="staffCount"></div>
-      <div id="holdingBar">
-        Holding: <span id="holdingName">nothing</span>
-        <button id="cancelHold">Cancel</button>
+      <button id="toggleOrdersBtn">📋 Orders</button>
+    </div>
+
+    <div id="ordersPanel" class="hidden">
+      <div class="ordersPanelHeader">
+        <span>📋 Orders</span>
+        <button id="closeOrders">✕</button>
       </div>
-      <div id="hint">WASD move · SPACE interact · E menu · Right-click an object to move/rotate/store/sell</div>
+      <div id="ordersList"></div>
     </div>
 
     <div id="gameArea">
@@ -30,58 +33,77 @@
     <div id="menu" class="hidden">
       <div class="menuHeader">
         <button class="tabBtn active" data-tab="build">🧱 Build</button>
-        <button class="tabBtn" data-tab="shop">🗺️ Shop</button>
         <button class="tabBtn" data-tab="recipes">📖 Recipes</button>
         <button class="tabBtn" data-tab="staff">👥 Staff</button>
-        <button class="tabBtn" data-tab="objects">📦 Objects</button>
+        <button class="tabBtn" data-tab="storage">📦 Storage</button>
         <button class="tabBtn" data-tab="settings">⚙️ Settings</button>
+        <button class="tabBtn" data-tab="tutorial">🎓 Tutorial</button>
+      </div>
+
+      <div class="menuContent">
         <button id="closeMenu">✕</button>
-      </div>
 
-      <div id="tab-build" class="tabPanel active">
-        <p class="tabHelp">Buy an item — it goes into your hand and the menu closes so you can place it. Click a tile to place it.</p>
-        <div id="palette"></div>
-      </div>
+        <div id="tab-build" class="tabPanel active">
+          <p class="tabHelp">Buy an item — it goes into your hand and the menu closes so you can place it. Click a tile to place it.</p>
+          <div id="palette"></div>
+        </div>
 
-      <div id="tab-shop" class="tabPanel">
-        <p class="tabHelp">Expand your restaurant. Diagonal lots require both neighboring side lots to be owned first.</p>
-        <div id="shopMap"></div>
-      </div>
+        <div id="tab-recipes" class="tabPanel">
+          <p class="tabHelp">Enabled recipes can be ordered by customers. Customers always try to order the priciest recipe whose ingredient is in stock, falling back to cheaper ones — plain rice never runs out. Recipes marked "Prep" must visit a Prep Station before the fridge.</p>
+          <table id="recipeTable">
+            <thead><tr><th></th><th>Recipe</th><th>Needs</th><th>Prep</th><th>Price</th><th>Cook time</th><th>Enabled</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
 
-      <div id="tab-recipes" class="tabPanel">
-        <p class="tabHelp">Enabled recipes can be ordered by customers.</p>
-        <table id="recipeTable">
-          <thead><tr><th></th><th>Recipe</th><th>Cost</th><th>Price</th><th>Cook time</th><th>Enabled</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
+        <div id="tab-staff" class="tabPanel">
+          <p class="tabHelp">Hire staff to automate the restaurant. They'll take orders, cook, deliver food and clean up on their own. Each locked slot shows the price to hire the next one — it climbs steeply per role.</p>
+          <p class="tabHelp">Train staff to level up (max 10): chefs move and cook faster, waiters and cleaners move faster and carry more plates per trip. Cost and time increase each level.</p>
+          <div id="staffPanels"></div>
+          <table id="staffTable">
+            <thead><tr><th>Name</th><th>Role</th><th>Level</th><th></th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
 
-      <div id="tab-staff" class="tabPanel">
-        <p class="tabHelp">Hire staff to automate the restaurant. They'll take orders, cook, deliver food and clean up on their own.</p>
-        <div id="hireRow"></div>
-        <table id="staffTable">
-          <thead><tr><th>Name</th><th>Role</th><th></th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
+        <div id="tab-storage" class="tabPanel">
+          <p class="tabHelp">In storage: items bought or picked up, waiting to be placed. Everything starts here — build your layout from scratch.</p>
+          <table id="inventoryTable">
+            <thead><tr><th></th><th>Object</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <p class="tabHelp">Placed in your restaurant:</p>
+          <table id="placedTable">
+            <thead><tr><th></th><th>Object</th><th>Position</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
 
-      <div id="tab-objects" class="tabPanel">
-        <p class="tabHelp">In storage: items bought or picked up, waiting to be placed.</p>
-        <table id="inventoryTable">
-          <thead><tr><th></th><th>Object</th><th></th></tr></thead>
-          <tbody></tbody>
-        </table>
-        <p class="tabHelp">Placed in your restaurant:</p>
-        <table id="placedTable">
-          <thead><tr><th></th><th>Object</th><th>Position</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
+        <div id="tab-settings" class="tabPanel">
+          <p class="tabHelp">Restaurant-wide settings.</p>
+          <button id="toggleOpenBtn">🔴 Close Restaurant</button>
+          <p class="tabHelp" id="openStatusText"></p>
+        </div>
 
-      <div id="tab-settings" class="tabPanel">
-        <p class="tabHelp">Restaurant-wide settings.</p>
-        <button id="toggleOpenBtn">🔴 Close Restaurant</button>
-        <p class="tabHelp" id="openStatusText"></p>
+        <div id="tab-tutorial" class="tabPanel">
+          <p class="tabHelp"><strong>Controls</strong></p>
+          <ul class="tutorialList">
+            <li><strong>WASD</strong> — move around</li>
+            <li><strong>SPACE</strong> — interact (serve a table, cook, collect payment...)</li>
+            <li><strong>E</strong> — open/close this menu</li>
+            <li><strong>ESC</strong> — put down whatever you're currently holding</li>
+            <li>Right-click a placed object to Move, Rotate, Store, or Sell it</li>
+          </ul>
+          <p class="tabHelp"><strong>Getting started</strong></p>
+          <ul class="tutorialList">
+            <li>Everything starts in <strong>Storage</strong> — place your Fridge, Stove, Sink, Order Stand, Paying Booth, Table and Chairs anywhere on the field to build your kitchen</li>
+            <li>Interact with a seated customer's table to take their order, then cook it: grab the ingredient at the <strong>Fridge</strong>, cook it at the <strong>Stove</strong>, and drop the finished dish at the <strong>Order Stand</strong></li>
+            <li>Some recipes (like Shrimp) must visit the <strong>Prep Station</strong> before the fridge</li>
+            <li>Plant wheat on a <strong>Farm Plot</strong>, wait for it to grow, then harvest it — the fridge shows your current wheat stock</li>
+            <li>Hire staff from the <strong>Staff</strong> tab to automate cooking, serving, cleaning and farming — train them to level up</li>
+            <li>Watch the <strong>📋 Orders</strong> panel (top of screen) to see what's cooking and what's ready to deliver</li>
+          </ul>
+        </div>
       </div>
     </div>
   </div>

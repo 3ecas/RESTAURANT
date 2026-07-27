@@ -7,39 +7,81 @@ function initUI(game) {
       document.querySelectorAll('.tabPanel').forEach(p => p.classList.remove('active'));
       btn.classList.add('active');
       document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
-      if (btn.dataset.tab === 'objects') refreshObjectsTab(game);
-      if (btn.dataset.tab === 'shop') renderShopMap(game);
+      if (btn.dataset.tab === 'storage') refreshObjectsTab(game);
     });
   });
 
   document.getElementById('closeMenu').addEventListener('click', () => game.closeMenu());
-
-  document.getElementById('cancelHold').addEventListener('click', () => {
-    if (game.heldObject) {
-      // try to drop it back exactly where it came from; otherwise just keep it in storage
-      const placed = game.world.place(game.heldObject, game.heldObject.x, game.heldObject.y);
-      if (!placed) game.inventory.push(game.heldObject);
-      game.heldObject = null;
-    }
-    updateHoldingUI(game);
-    refreshObjectsTab(game);
-  });
 
   document.getElementById('toggleOpenBtn').addEventListener('click', () => {
     game.isOpen = !game.isOpen;
     updateOpenStatusUI(game);
   });
 
+  document.getElementById('toggleOrdersBtn').addEventListener('click', () => {
+    document.getElementById('ordersPanel').classList.toggle('hidden');
+    renderOrdersPanel(game);
+  });
+  document.getElementById('closeOrders').addEventListener('click', () => {
+    document.getElementById('ordersPanel').classList.add('hidden');
+  });
+
   renderPalette(game);
   renderRecipeTable(game);
-  renderStaffHireButtons(game);
+  renderStaffPanels(game);
   renderStaffTable(game);
   refreshObjectsTab(game);
-  renderShopMap(game);
+  renderOrdersPanel(game);
   updateMoneyUI(game);
-  updateStaffCountUI(game);
-  updateHoldingUI(game);
   updateOpenStatusUI(game);
+}
+
+// puts a held object back where it came from (or into storage if that spot's gone) — bound to Escape
+function cancelHeldObject(game) {
+  if (game.heldObject) {
+    const placed = game.world.place(game.heldObject, game.heldObject.x, game.heldObject.y);
+    if (!placed) game.inventory.push(game.heldObject);
+    game.heldObject = null;
+  }
+  refreshObjectsTab(game);
+}
+
+// green = ready to deliver, grey = still waiting to be cooked
+function renderOrdersPanel(game) {
+  const list = document.getElementById('ordersList');
+  if (!list) return;
+  const stand = game.world.findObjects('orderStand')[0];
+
+  if (!stand || (stand.pending.length === 0 && stand.ready.length === 0)) {
+    list.innerHTML = '<div class="orderEmpty">No active orders.</div>';
+    return;
+  }
+
+  const counts = {}; // "recipe|status" -> count
+  stand.ready.forEach(o => {
+    const key = o.recipe + '|ready';
+    counts[key] = (counts[key] || 0) + 1;
+  });
+  stand.pending.forEach(o => {
+    const key = o.recipe + '|pending';
+    counts[key] = (counts[key] || 0) + 1;
+  });
+
+  const rows = Object.entries(counts).map(([key, count]) => {
+    const [recipe, status] = key.split('|');
+    return { recipe, status, count };
+  });
+  rows.sort((a, b) => (a.status === b.status ? 0 : a.status === 'ready' ? -1 : 1));
+
+  list.innerHTML = '';
+  rows.forEach(row => {
+    const def = getRecipe(row.recipe);
+    const div = document.createElement('div');
+    div.className = 'orderRow ' + (row.status === 'ready' ? 'orderReady' : 'orderPending');
+    const label = row.status === 'ready' ? 'to deliver' : 'waiting to cook';
+    div.innerHTML = `<span>${def ? def.icon : '❔'} ${def ? def.name : row.recipe}</span><span>${label} ×${row.count}</span>`;
+    list.appendChild(div);
+  });
 }
 
 function renderPalette(game) {
@@ -55,12 +97,16 @@ function renderPalette(game) {
   });
 }
 
+const INGREDIENT_ICON = { wheat: '🌾' };
+
 function renderRecipeTable(game) {
   const tbody = document.querySelector('#recipeTable tbody');
   tbody.innerHTML = '';
   RECIPES.forEach(r => {
+    const needs = r.ingredient ? `${INGREDIENT_ICON[r.ingredient] || ''} ${r.ingredient}` : '—';
+    const prep = r.needsPrep ? '🔪 required' : '—';
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${r.icon}</td><td>${r.name}</td><td>$${r.cost}</td><td>$${r.price}</td><td>${(r.cookTime / 1000).toFixed(1)}s</td>
+    tr.innerHTML = `<td>${r.icon}</td><td>${r.name}</td><td>${needs}</td><td>${prep}</td><td>$${r.price}</td><td>${(r.cookTime / 1000).toFixed(1)}s</td>
       <td><input type="checkbox" ${r.enabled ? 'checked' : ''} data-id="${r.id}" class="recipeToggle"></td>`;
     tbody.appendChild(tr);
   });
@@ -73,24 +119,59 @@ function renderRecipeTable(game) {
 }
 
 const HIRE_BASE_COST = 10;
-const HIRE_ROLES = ['waiter', 'chef', 'cleaner'];
-const ROLE_ICON = { waiter: '🤵', chef: '👨‍🍳', cleaner: '🧹' };
+const HIRE_ROLES = ['waiter', 'chef', 'cleaner', 'farmer', 'rancher', 'fisherman'];
+const ROLE_ICON = { waiter: '🤵', chef: '👨‍🍳', cleaner: '🧹', farmer: '👩‍🌾', rancher: '🐄', fisherman: '🎣' };
+const ROLE_LABEL = { waiter: 'Waiter', chef: 'Chef', cleaner: 'Cleaner', farmer: 'Farmer', rancher: 'Rancher', fisherman: 'Fisherman' };
 
 function getHireCost(game, role) {
   const n = game.staff.filter(s => s.role === role).length;
   return HIRE_BASE_COST * Math.pow(10, n);
 }
 
-function renderStaffHireButtons(game) {
-  const row = document.getElementById('hireRow');
-  row.innerHTML = '';
+// cost/time to train from `level` to `level + 1` — cheap at first, steep near max level
+function staffTrainCost(level) {
+  return 20 * level * level;
+}
+function staffTrainTime(level) {
+  return 5000 * level; // ms
+}
+
+// one horizontal panel per role: a filled slot for each staff member already hired,
+// plus one locked slot showing the price to hire the next one
+function renderStaffPanels(game) {
+  const container = document.getElementById('staffPanels');
+  container.innerHTML = '';
   HIRE_ROLES.forEach(role => {
+    const hired = game.staff.filter(s => s.role === role);
     const cost = getHireCost(game, role);
-    const btn = document.createElement('button');
-    btn.textContent = `${ROLE_ICON[role]} Hire ${role} ($${cost})`;
-    btn.disabled = game.money < cost;
-    btn.addEventListener('click', () => game.hireStaff(role));
-    row.appendChild(btn);
+
+    const panel = document.createElement('div');
+    panel.className = 'rolePanel';
+
+    const header = document.createElement('div');
+    header.className = 'rolePanelHeader';
+    header.textContent = `${ROLE_ICON[role]} ${ROLE_LABEL[role]}`;
+    panel.appendChild(header);
+
+    const slots = document.createElement('div');
+    slots.className = 'rolePanelSlots';
+
+    hired.forEach(s => {
+      const slot = document.createElement('div');
+      slot.className = 'staffSlot filled';
+      slot.innerHTML = `<span class="slotIcon">${ROLE_ICON[role]}</span><span class="slotName">${s.name}</span><span class="slotLevel">Lvl ${s.level}</span>`;
+      slots.appendChild(slot);
+    });
+
+    const lockedSlot = document.createElement('div');
+    const affordable = game.money >= cost;
+    lockedSlot.className = 'staffSlot locked' + (affordable ? '' : ' disabled');
+    lockedSlot.innerHTML = `<span class="slotIcon">🔒</span><span class="slotCost">$${cost}</span>`;
+    lockedSlot.addEventListener('click', () => game.hireStaff(role));
+    slots.appendChild(lockedSlot);
+
+    panel.appendChild(slots);
+    container.appendChild(panel);
   });
 }
 
@@ -99,12 +180,30 @@ function renderStaffTable(game) {
   tbody.innerHTML = '';
   game.staff.forEach(s => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${s.name}</td><td>${ROLE_ICON[s.role]} ${s.role}</td><td></td>`;
+    tr.innerHTML = `<td>${s.name}</td><td>${ROLE_ICON[s.role]} ${s.role}</td><td>Lvl ${s.level}/${STAFF_MAX_LEVEL}</td><td></td><td></td>`;
+
+    const trainCell = tr.children[3];
+    if (s.training) {
+      const secsLeft = Math.max(0, Math.ceil(s.training.remaining / 1000));
+      trainCell.textContent = `Training… ${secsLeft}s`;
+    } else if (s.level >= STAFF_MAX_LEVEL) {
+      trainCell.textContent = 'Max level';
+    } else {
+      const cost = staffTrainCost(s.level);
+      const trainBtn = document.createElement('button');
+      trainBtn.textContent = `🎓 Train ($${cost}, ${Math.round(staffTrainTime(s.level) / 1000)}s)`;
+      trainBtn.className = 'smallBtn';
+      trainBtn.disabled = game.money < cost;
+      trainBtn.addEventListener('click', () => game.trainStaff(s.id));
+      trainCell.appendChild(trainBtn);
+    }
+
     const fireBtn = document.createElement('button');
     fireBtn.textContent = 'Fire';
     fireBtn.className = 'smallBtn';
     fireBtn.addEventListener('click', () => game.fireStaff(s.id));
-    tr.children[2].appendChild(fireBtn);
+    tr.children[4].appendChild(fireBtn);
+
     tbody.appendChild(tr);
   });
 }
@@ -145,9 +244,10 @@ function renderPlacedTable(game) {
   tbody.innerHTML = '';
   game.world.objects.forEach(obj => {
     const def = getItemDef(obj.type);
-    const label = SINGLE_SIDE_TYPES.has(obj.type) ? `${def.name} (usable from ${SIDE_ARROW[obj.side]})` : (def ? def.name : obj.type);
+    const label = SINGLE_SIDE_TYPES.has(obj.type) ? `${def.name} (usable from ${SIDE_ARROW[obj.side]})` : (def ? def.name : (obj.type === 'door' ? 'Door' : obj.type));
+    const icon = def ? def.icon : (obj.type === 'door' ? '🚪' : '📍');
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${def ? def.icon : '📍'}</td><td>${label}</td><td>(${obj.x}, ${obj.y})</td>`;
+    tr.innerHTML = `<td>${icon}</td><td>${label}</td><td>(${obj.x}, ${obj.y})</td>`;
     tbody.appendChild(tr);
   });
   if (game.world.objects.length === 0) {
@@ -155,59 +255,11 @@ function renderPlacedTable(game) {
   }
 }
 
-function renderShopMap(game) {
-  const el = document.getElementById('shopMap');
-  el.innerHTML = '';
-  const cost = lotPurchaseCost(game.world);
-  for (let row = 0; row < 3; row++) {
-    for (let col = 0; col < 3; col++) {
-      const div = document.createElement('div');
-      if (row === 1 && col === 1) {
-        div.className = 'lotCell home';
-        div.innerHTML = '🏠<br>Home';
-        el.appendChild(div);
-        continue;
-      }
-      const lot = EXPANSION_LOTS.find(l => l.col === col && l.row === row);
-      const owned = game.world.lots[row][col];
-      if (owned) {
-        div.className = 'lotCell owned';
-        div.innerHTML = `✅<br>${lot.label}`;
-      } else {
-        const eligible = lot.requires.every(rk => {
-          const rl = EXPANSION_LOTS.find(l => l.key === rk);
-          return game.world.lots[rl.row][rl.col];
-        });
-        if (eligible) {
-          div.className = 'lotCell buyable' + (game.money < cost ? ' disabled' : '');
-          div.innerHTML = `${lot.label}<div class="lotCost">$${cost}</div>`;
-          div.addEventListener('click', () => game.purchaseLot(lot.key));
-        } else {
-          div.className = 'lotCell locked';
-          div.innerHTML = `🔒<br>${lot.label}<div class="lotCost">needs ${lot.requires.join(' + ')}</div>`;
-        }
-      }
-      el.appendChild(div);
-    }
-  }
-}
-
 function updateMoneyUI(game) {
   document.getElementById('moneyVal').textContent = game.money;
   renderPalette(game);
-  renderStaffHireButtons(game);
-}
-
-function updateStaffCountUI(game) {
-  const counts = { waiter: 0, chef: 0, cleaner: 0 };
-  game.staff.forEach(s => counts[s.role]++);
-  document.getElementById('staffCount').textContent =
-    `🤵 ${counts.waiter}  👨‍🍳 ${counts.chef}  🧹 ${counts.cleaner}`;
-}
-
-function updateHoldingUI(game) {
-  const name = game.heldObject ? (getItemDef(game.heldObject.type) ? getItemDef(game.heldObject.type).name : game.heldObject.type) : 'nothing';
-  document.getElementById('holdingName').textContent = name;
+  renderStaffPanels(game);
+  renderStaffTable(game);
 }
 
 function updateOpenStatusUI(game) {
@@ -242,6 +294,8 @@ function showContextMenu(game, obj, clientX, clientY) {
   rotateBtn.style.display = SINGLE_SIDE_TYPES.has(obj.type) ? '' : 'none';
   const def = getItemDef(obj.type);
   sellBtn.style.display = def ? '' : 'none';
+  // the door is movable only — the restaurant must always have one, so no store/sell
+  storeBtn.style.display = obj.type === 'door' ? 'none' : '';
   menu.classList.remove('hidden');
   menu.style.left = clientX + 'px';
   menu.style.top = clientY + 'px';
