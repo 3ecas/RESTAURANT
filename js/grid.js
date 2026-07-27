@@ -19,6 +19,9 @@ const OPPOSITE_DIR = { up: 'down', down: 'up', left: 'right', right: 'left' };
 // appliances that can only be used by approaching from one specific side (obj.side)
 const SINGLE_SIDE_TYPES = new Set(['stove', 'fridge']);
 
+// anything a chair can pair up with to seat a customer — a table, or a counter (bar seating)
+const SEATING_SURFACE_TYPES = new Set(['table', 'wall']);
+
 function usableSides(obj) {
   if (SINGLE_SIDE_TYPES.has(obj.type)) {
     const d = DIRS.find(d => d.name === obj.side);
@@ -45,13 +48,15 @@ class World {
   }
 
   // grows a single irregular pond (capped at maxSize cells) on empty ground, via random
-  // blob growth from one seed cell — every water cell always touches another one
+  // blob growth from one seed cell — every water cell always touches another one.
+  // always confined to the top band of the map so water reliably appears along the top edge.
   generateWater(maxSize) {
+    const topBand = Math.max(4, Math.floor(ROWS * 0.25));
     const size = 1 + Math.floor(Math.random() * maxSize);
     let seed = null;
     for (let attempt = 0; attempt < 200; attempt++) {
       const x = Math.floor(Math.random() * COLS);
-      const y = Math.floor(Math.random() * ROWS);
+      const y = Math.floor(Math.random() * topBand);
       if (this.grid[y][x] === null && !this.isWater(x, y)) { seed = { x, y }; break; }
     }
     if (!seed) return;
@@ -65,7 +70,7 @@ class World {
       let grew = false;
       for (const d of dirs) {
         const nx = cell.x + d.x, ny = cell.y + d.y;
-        if (!this.inBounds(nx, ny)) continue;
+        if (!this.inBounds(nx, ny) || ny >= topBand) continue;
         if (this.grid[ny][nx] !== null || this.isWater(nx, ny)) continue;
         if (blob.some(c => c.x === nx && c.y === ny)) continue;
         const next = { x: nx, y: ny };
@@ -228,12 +233,17 @@ class World {
     return null;
   }
 
+  // every object customers can sit and be served at — tables and counters/walls with a chair
+  seatingSurfaces() {
+    return this.objects.filter(o => SEATING_SURFACE_TYPES.has(o.type));
+  }
+
   chairsForTables() {
     const result = [];
     for (const chair of this.findObjects('chair')) {
       for (const d of DIRS) {
         const neighbor = this.cellAt(chair.x + d.x, chair.y + d.y);
-        if (neighbor && neighbor.type === 'table') {
+        if (neighbor && SEATING_SURFACE_TYPES.has(neighbor.type)) {
           result.push({ chair, table: neighbor });
           break;
         }
@@ -245,13 +255,30 @@ class World {
   tableOfChair(chair) {
     for (const d of DIRS) {
       const neighbor = this.cellAt(chair.x + d.x, chair.y + d.y);
-      if (neighbor && neighbor.type === 'table') return neighbor;
+      if (neighbor && SEATING_SURFACE_TYPES.has(neighbor.type)) return neighbor;
     }
     return null;
   }
 
-  // every chair seated around the given table — lets one interaction serve the whole table
+  // every chair seated around the given table/counter — lets one interaction serve the whole group
   chairsOfTable(table) {
     return this.findObjects('chair').filter(chair => this.tableOfChair(chair) === table);
+  }
+
+  // every walkable cell that touches at least one water cell — where a fisherman can fish from
+  fishingSpots() {
+    const spots = [];
+    const seen = new Set();
+    for (const key of this.water) {
+      const [wx, wy] = key.split(',').map(Number);
+      for (const d of DIRS) {
+        const nx = wx + d.x, ny = wy + d.y;
+        const k = nx + ',' + ny;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        if (this.isWalkable(nx, ny)) spots.push({ x: nx, y: ny });
+      }
+    }
+    return spots;
   }
 }

@@ -7,10 +7,14 @@
 </head>
 <body>
   <div id="app">
-    <div id="hud">
-      <div id="money">💰 <span id="moneyVal">0</span></div>
-      <button id="toggleOrdersBtn">📋 Orders</button>
+    <div id="moneyBox">💰 <span id="moneyVal">0</span></div>
+
+    <div id="ingredientsBox">
+      <div class="cornerBoxHeader">📦 Ingredients</div>
+      <div id="ingredientsList"></div>
     </div>
+
+    <button id="toggleOrdersBtn">📋 Orders</button>
 
     <div id="ordersPanel" class="hidden">
       <div class="ordersPanelHeader">
@@ -98,9 +102,10 @@
           <ul class="tutorialList">
             <li>Everything starts in <strong>Storage</strong> — place your Fridge, Stove, Sink, Order Stand, Paying Booth, Table and Chairs anywhere on the field to build your kitchen</li>
             <li>Interact with a seated customer's table to take their order, then cook it: grab the ingredient at the <strong>Fridge</strong>, cook it at the <strong>Stove</strong>, and drop the finished dish at the <strong>Order Stand</strong></li>
+            <li>A <strong>Counter</strong> works as bar seating too — put a chair next to one and customers will sit and eat right there, no table needed</li>
             <li>Some recipes (like Shrimp) must visit the <strong>Prep Station</strong> before the fridge</li>
-            <li>Plant wheat on a <strong>Farm Plot</strong>, wait for it to grow, then harvest it — the fridge shows your current wheat stock</li>
-            <li>Hire staff from the <strong>Staff</strong> tab to automate cooking, serving, cleaning and farming — train them to level up</li>
+            <li>Plant wheat on a <strong>Wheat Plot</strong>, wait for it to grow, then harvest it — the fridge shows your current wheat stock</li>
+            <li>Hire staff from the <strong>Staff</strong> tab to automate cooking, serving, cleaning and farming (farmers plant and harvest on their own) — train them to level up</li>
             <li>Watch the <strong>📋 Orders</strong> panel (top of screen) to see what's cooking and what's ready to deliver</li>
           </ul>
         </div>

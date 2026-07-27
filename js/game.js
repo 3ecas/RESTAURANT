@@ -17,8 +17,9 @@ class Game {
     this.spawnTimer = 3000;
     this.isOpen = true;
     this.staffUIRefresh = 0; // throttles the staff table redraw while training counts down
+    this.wasTraining = false;
     this.ordersUIRefresh = 0; // throttles the orders panel redraw
-    this.ingredients = { wheat: 0, shrimp: 0 }; // ingredient stock, consumed by recipes that need them — starts empty, so only rice (which needs nothing) is ever ordered until you have some
+    this.ingredients = { wheat: 0, shrimp: 0, chicken: 0 }; // ingredient stock, consumed by recipes that need them — starts empty, so only rice (which needs nothing) is ever ordered until you have some
 
     this.setupLevel();
     this.player = new Player(8, 10);
@@ -43,22 +44,23 @@ class Game {
 
   setupLevel() {
     const w = this.world;
-    // only the structural bits are pre-placed — everything else starts in storage
-    // so the player builds their own layout from scratch
     w.place(createObject('door'), 9, 13);
     w.place(createObject('spawnPoint'), 7, 7);
     w.generateWater(15);
 
+    // a minimal starting kitchen is pre-placed; prep station stays in storage
+    // so the player has to place at least that themselves
+    w.place(createObject('fridge'), 8, 8);
+    w.place(createObject('orderStand'), 9, 8);
+    w.place(createObject('sink'), 10, 8);
+    w.place(createObject('payingBooth'), 11, 8);
+    w.place(createObject('stove'), 12, 8);
+    w.place(createObject('table'), 9, 11);
+    w.place(createObject('chair'), 9, 10);
+    w.place(createObject('chair'), 9, 12);
+
     this.inventory.push(
-      createObject('fridge'),
-      createObject('prepStation'),
-      createObject('stove'),
-      createObject('orderStand'),
-      createObject('sink'),
-      createObject('payingBooth'),
-      createObject('table'),
-      createObject('chair'),
-      createObject('chair')
+      createObject('prepStation')
     );
   }
 
@@ -150,7 +152,8 @@ class Game {
     if (obj.type === 'stove' && obj.cooking) return false;
     if (obj.type === 'orderStand' && (obj.pending.length || obj.ready.length)) return false;
     if (obj.type === 'payingBooth' && obj.collected > 0) return false;
-    if (obj.type === 'farmPlot' && obj.planted) return false;
+    if (obj.type === 'farmPlot' && obj.ready) return false;
+    if (obj.type === 'chicken' && obj.grown) return false;
     return true;
   }
 
@@ -281,11 +284,11 @@ class Game {
     const world = this.world;
     const player = this.player;
 
-    if (obj.type === 'chair' || obj.type === 'table') {
-      const table = obj.type === 'table' ? obj : world.tableOfChair(obj);
+    if (obj.type === 'chair' || SEATING_SURFACE_TYPES.has(obj.type)) {
+      const table = SEATING_SURFACE_TYPES.has(obj.type) ? obj : world.tableOfChair(obj);
       if (!table) return false;
       if (this.serveTable(table)) return true;
-      if (obj.type === 'table' && obj.dirty && !player.carrying) {
+      if (SEATING_SURFACE_TYPES.has(obj.type) && obj.dirty && !player.carrying) {
         obj.dirty = false;
         obj.claimedDirty = false;
         player.carrying = { kind: 'dirty' };
@@ -307,11 +310,12 @@ class Game {
         obj.ready = false;
         return true;
       }
-      if (obj.ready) {
+      if (obj.ready && !player.carrying) {
+        // harvesting doesn't unplant it — it just starts growing the next crop right away.
+        // the crop itself still has to be carried to the fridge to count as stock
         obj.ready = false;
-        obj.planted = false;
         obj.progress = 0;
-        this.ingredients.wheat = (this.ingredients.wheat || 0) + 1;
+        player.carrying = { kind: 'wheat' };
         return true;
       }
       return false;
@@ -338,6 +342,11 @@ class Game {
     }
 
     if (obj.type === 'fridge') {
+      if (player.carrying && player.carrying.kind === 'wheat') {
+        this.ingredients.wheat = (this.ingredients.wheat || 0) + 1;
+        player.carrying = null;
+        return true;
+      }
       if (!player.carrying) {
         const stand = world.findObjects('orderStand').find(s => s.pending.some(o => !getRecipe(o.recipe).needsPrep && this.canCookRecipe(o.recipe)));
         if (!stand) return false;
@@ -419,7 +428,8 @@ class Game {
     const chairs = world.chairsOfTable(table);
     let did = false;
 
-    if (!player.carrying) {
+    // taking an order doesn't need a free hand — only a dirty plate or nothing at all
+    if (!player.carrying || player.carrying.kind === 'dirty') {
       const stand = world.findObjects('orderStand')[0];
       if (stand) {
         for (const chair of chairs) {
@@ -469,20 +479,42 @@ class Game {
       }
     }
 
+    // chickens eat from any feeder that has wheat, a little at a time — not too much, just enough
+    for (const chicken of this.world.findObjects('chicken')) {
+      if (chicken.grown) continue;
+      chicken.hungerCooldown -= dt;
+      if (chicken.hungerCooldown > 0) continue;
+      const feeder = this.world.findObjects('chickenFeeder').find(f => (f.wheat || 0) > 0);
+      if (feeder) {
+        feeder.wheat -= 1;
+        chicken.fed += 1;
+        chicken.hungerCooldown = CHICKEN_EAT_INTERVAL;
+        if (chicken.fed >= CHICKEN_FEEDS_TO_GROW) chicken.grown = true;
+      } else {
+        chicken.hungerCooldown = 500; // no food available right now — check back soon
+      }
+    }
+
     for (const s of this.staff) s.update(dt, this.world, this);
 
-    if (this.staff.some(s => s.training)) {
+    // keep refreshing while anyone is training, plus one guaranteed extra render the moment
+    // the last one finishes — otherwise the panel freezes on its last "Xs left" text forever,
+    // since the training-in-progress check that gates this block just went false
+    const anyTraining = this.staff.some(s => s.training);
+    if (anyTraining || this.wasTraining) {
       this.staffUIRefresh -= dt;
-      if (this.staffUIRefresh <= 0) {
+      if (this.staffUIRefresh <= 0 || !anyTraining) {
         this.staffUIRefresh = 500;
         renderStaffTable(this);
       }
     }
+    this.wasTraining = anyTraining;
 
     this.ordersUIRefresh -= dt;
     if (this.ordersUIRefresh <= 0) {
       this.ordersUIRefresh = 400;
       renderOrdersPanel(this);
+      renderIngredientsBox(this);
     }
 
     for (const c of this.world.customers) c.update(dt, this.world, this);
@@ -596,6 +628,10 @@ const OBJECT_STYLE = {
   spawnPoint:  { color: '#9c9c9c', icon: '👤' },
   door:        { color: 'rgba(120, 200, 120, 0.9)', icon: '🚪' },
   farmPlot:    { color: '#6b4f36', icon: '🟫' },
+  freezer:     { color: '#bcd9e8', icon: '❄️' },
+  chicken:      { color: '#f2e2b6', icon: '🐤' },
+  chickenFeeder:{ color: '#c9a878', icon: '🥣' },
+  animalShack:  { color: '#a67c52', icon: '🛖' },
 };
 const ROLE_COLOR = { waiter: '#3fae55', chef: '#f5f5f5', cleaner: '#1a1a1a', farmer: '#c9a227', rancher: '#8b5e3c', fisherman: '#3f8fae' };
 const ROLE_OUTLINE = { waiter: '#245c30', chef: '#999999', cleaner: '#666666', farmer: '#7a621a', rancher: '#5a3c22', fisherman: '#245a70' };
@@ -628,7 +664,9 @@ function drawObject(obj) {
   ctx.font = Math.floor(CELL * 0.6) + 'px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const icon = obj.type === 'farmPlot' ? (obj.ready ? '🌾' : obj.planted ? '🌱' : style.icon) : style.icon;
+  let icon = style.icon;
+  if (obj.type === 'farmPlot') icon = obj.ready ? '🌾' : obj.planted ? '🌱' : style.icon;
+  else if (obj.type === 'chicken') icon = obj.grown ? '🐓' : '🐤';
   ctx.fillText(icon, px + CELL / 2, py + CELL / 2);
 
   if (obj.type === 'farmPlot' && obj.planted && !obj.ready) {
@@ -641,6 +679,21 @@ function drawObject(obj) {
   if (obj.type === 'farmPlot' && obj.ready) {
     ctx.font = Math.round(10 * SCALE) + 'px sans-serif';
     ctx.fillText('✅', px + CELL - 7, py + 7);
+  }
+
+  if (obj.type === 'chicken' && !obj.grown) {
+    const pct = Math.min(1, obj.fed / CHICKEN_FEEDS_TO_GROW);
+    ctx.fillStyle = '#2a2a2a';
+    ctx.fillRect(px + 3, py + CELL - 7, CELL - 6, 4);
+    ctx.fillStyle = '#e0b04a';
+    ctx.fillRect(px + 3, py + CELL - 7, (CELL - 6) * pct, 4);
+  }
+  if (obj.type === 'chicken' && obj.grown) {
+    ctx.font = Math.round(10 * SCALE) + 'px sans-serif';
+    ctx.fillText('✅', px + CELL - 7, py + 7);
+  }
+  if (obj.type === 'chickenFeeder') {
+    badge(px + CELL - 8, py + 7, obj.wheat || 0, '#c9a227');
   }
 
   if (obj.type === 'stove' && (obj.cooking || obj.ready)) {
@@ -661,13 +714,7 @@ function drawObject(obj) {
     if (obj.ready.length > 0) badge(px + CELL - 8, py + 7, obj.ready.length, '#4caf50');
   }
 
-  // current ingredient stock lives on the fridge, not the HUD
-  if (obj.type === 'fridge') {
-    badge(px + CELL - 8, py + CELL - 8, game.ingredients.wheat || 0, '#c9a227');
-    badge(px + 8, py + CELL - 8, game.ingredients.shrimp || 0, '#6fa8c9');
-  }
-
-  if (obj.type === 'table' && obj.dirty) {
+  if (SEATING_SURFACE_TYPES.has(obj.type) && obj.dirty) {
     ctx.font = Math.round(11 * SCALE) + 'px sans-serif';
     ctx.fillText('🍴', px + CELL / 2, py + 9);
   }
@@ -723,7 +770,7 @@ function roundRect(x, y, w, h, r) {
 
 function drawCarried(px, py, carrying) {
   if (!carrying) return;
-  const icons = { ingredient: '🥕', cooked: '🍚', dirty: '🍴', wheat: '🌾', prepped: '🔪' };
+  const icons = { ingredient: '🥕', cooked: '🍚', dirty: '🍴', wheat: '🌾', prepped: '🔪', raw_fish: '🐟', prepped_fish: '🦐', raw_chicken: '🐤', chicken: '🍗', wheat_feed: '🌾' };
   const recipe = carrying.recipe ? getRecipe(carrying.recipe) : null;
   const icon = ((carrying.kind === 'cooked' || carrying.kind === 'prepped') && recipe) ? recipe.icon : (icons[carrying.kind] || '?');
   ctx.font = Math.round(12 * SCALE) + 'px sans-serif';
@@ -752,14 +799,19 @@ function drawCharacter(px, py, color, outline, carrying, label) {
 
 function drawCustomer(c) {
   let bubble = null;
-  if (c.state === 'thinking' || c.state === 'waitingOrder') bubble = '❗';
-  else if (c.state === 'waitingFood') bubble = '⏳';
+  let isAlert = false;
+  if (c.state === 'thinking' || c.state === 'waitingOrder') { bubble = '❗'; isAlert = true; }
+  else if (c.state === 'waitingFood') {
+    // show what they actually ordered instead of a generic waiting icon
+    const recipe = getRecipe(c.order);
+    bubble = recipe ? recipe.icon : '⏳';
+  }
   drawCharacter(c.px, c.py, CUSTOMER_COLOR, CUSTOMER_OUTLINE, null);
   if (bubble) {
     ctx.font = 'bold ' + Math.round(13 * SCALE) + 'px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = bubble === '❗' ? '#ffd76b' : '#dfe6ee';
+    ctx.fillStyle = isAlert ? '#ffd76b' : '#dfe6ee';
     ctx.fillText(bubble, c.px, c.py - 16 * SCALE);
   }
 }

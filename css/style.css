@@ -18,22 +18,58 @@ html, body {
   gap: 12px;
 }
 
-#hud {
-  width: 100%;
-  max-width: 900px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px 16px;
+#moneyBox {
+  position: fixed;
+  left: 16px;
+  top: 16px;
+  z-index: 40;
   background: #3b3327;
   border: 2px solid #5c4d38;
   border-radius: 8px;
   padding: 8px 16px;
-  font-size: 15px;
+  font-weight: bold;
+  color: #ffd76b;
+  font-size: 18px;
 }
 
-#money { font-weight: bold; color: #ffd76b; font-size: 18px; }
+#ingredientsBox {
+  position: fixed;
+  left: 16px;
+  top: 64px;
+  z-index: 40;
+  width: 160px;
+  background: #2f2a22;
+  border: 2px solid #5c4d38;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.cornerBoxHeader {
+  background: #1f1b16;
+  border-bottom: 2px solid #5c4d38;
+  padding: 6px 10px;
+  font-weight: bold;
+  color: #ffd76b;
+  font-size: 12px;
+}
+
+#ingredientsList {
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.ingredientRow { display: flex; justify-content: space-between; }
+.ingredientEmpty { color: #a99c86; font-size: 12px; }
+
+#toggleOrdersBtn {
+  position: fixed;
+  right: 16px;
+  top: 16px;
+  z-index: 40;
+}
 
 #gameArea {
   position: relative;
@@ -247,8 +283,8 @@ th { color: #ffd76b; }
 
 #ordersPanel {
   position: fixed;
-  left: 16px;
-  top: 120px;
+  right: 16px;
+  top: 60px;
   width: 220px;
   max-height: 65vh;
   background: #2f2a22;

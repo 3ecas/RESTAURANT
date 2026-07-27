@@ -32,6 +32,7 @@ function initUI(game) {
   renderStaffTable(game);
   refreshObjectsTab(game);
   renderOrdersPanel(game);
+  renderIngredientsBox(game);
   updateMoneyUI(game);
   updateOpenStatusUI(game);
 }
@@ -97,7 +98,26 @@ function renderPalette(game) {
   });
 }
 
-const INGREDIENT_ICON = { wheat: '🌾' };
+const INGREDIENT_ICON = { wheat: '🌾', shrimp: '🦐', chicken: '🍗' };
+
+// always-visible fridge stock, shown in the corner box below the money box —
+// only ingredients you actually have any of are listed
+function renderIngredientsBox(game) {
+  const list = document.getElementById('ingredientsList');
+  if (!list) return;
+  const keys = Object.keys(game.ingredients).filter(k => (game.ingredients[k] || 0) > 0);
+  if (keys.length === 0) {
+    list.innerHTML = '<div class="ingredientEmpty">None yet.</div>';
+    return;
+  }
+  list.innerHTML = '';
+  keys.forEach(key => {
+    const div = document.createElement('div');
+    div.className = 'ingredientRow';
+    div.innerHTML = `<span>${INGREDIENT_ICON[key] || '❔'} ${key}</span><span>${game.ingredients[key]}</span>`;
+    list.appendChild(div);
+  });
+}
 
 function renderRecipeTable(game) {
   const tbody = document.querySelector('#recipeTable tbody');
