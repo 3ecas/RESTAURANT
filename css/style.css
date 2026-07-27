@@ -1,0 +1,217 @@
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #2b2620;
+  color: #f1e9dc;
+  font-family: "Segoe UI", Tahoma, sans-serif;
+  min-height: 100%;
+  overflow-y: auto;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px;
+  gap: 12px;
+}
+
+#hud {
+  width: 100%;
+  max-width: 900px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  background: #3b3327;
+  border: 2px solid #5c4d38;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 15px;
+}
+
+#money { font-weight: bold; color: #ffd76b; font-size: 18px; }
+#staffCount { color: #b7c9a8; font-size: 13px; }
+#hint { font-size: 12px; color: #b8ab94; }
+
+#holdingBar { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #ffd76b; }
+#holdingBar button { padding: 4px 10px; font-size: 12px; }
+
+#gameArea {
+  position: relative;
+  border: 3px solid #5c4d38;
+  border-radius: 6px;
+  background: #4a4030;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+
+canvas {
+  display: block;
+  background: #5b4f3a;
+  cursor: crosshair;
+}
+
+#contextMenu {
+  position: fixed;
+  z-index: 100;
+  background: #2f2a22;
+  border: 2px solid #8a6b3f;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 130px;
+}
+#contextMenu.hidden { display: none; }
+#contextMenu button {
+  border: none;
+  border-radius: 0;
+  background: #3b3327;
+  text-align: left;
+  padding: 8px 12px;
+}
+#contextMenu button:hover { background: #5a4a2e; }
+#contextMenu button:disabled { opacity: 0.4; cursor: not-allowed; background: #3b3327; }
+
+#menu {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 640px;
+  max-width: 92vw;
+  max-height: 82vh;
+  background: #2f2a22;
+  border: 3px solid #8a6b3f;
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+  display: flex;
+  flex-direction: column;
+  z-index: 50;
+  overflow: hidden;
+}
+
+#menu.hidden { display: none; }
+
+.menuHeader {
+  display: flex;
+  background: #1f1b16;
+  border-bottom: 2px solid #8a6b3f;
+  flex-wrap: wrap;
+}
+
+.tabBtn {
+  flex: 1;
+  background: none;
+  border: none;
+  color: #d8c9ab;
+  padding: 12px 6px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tabBtn.active {
+  background: #4a3d28;
+  color: #ffd76b;
+  font-weight: bold;
+}
+
+#closeMenu {
+  background: #6b2b2b;
+  border: none;
+  color: #fff;
+  width: 44px;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.tabPanel {
+  display: none;
+  padding: 14px 18px;
+  overflow-y: auto;
+}
+
+.tabPanel.active { display: block; }
+
+.tabHelp {
+  font-size: 12px;
+  color: #a99c86;
+  margin: 0 0 10px 0;
+}
+
+#palette {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.paletteItem {
+  background: #423a2c;
+  border: 2px solid #6b5a3f;
+  border-radius: 8px;
+  padding: 10px;
+  text-align: center;
+  cursor: pointer;
+  font-size: 13px;
+  color: #f1e9dc;
+}
+
+.paletteItem:hover { border-color: #ffd76b; }
+.paletteItem.disabled { opacity: 0.4; cursor: not-allowed; }
+.paletteItem .icon { font-size: 26px; display: block; margin-bottom: 4px; }
+.paletteItem .cost { color: #ffd76b; font-size: 11px; }
+
+button {
+  background: #4a3d28;
+  border: 2px solid #6b5a3f;
+  color: #f1e9dc;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+button:hover { background: #5a4a2e; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 16px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #4a3d28; }
+th { color: #ffd76b; }
+
+#hireRow { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+
+.smallBtn { padding: 4px 8px; font-size: 12px; }
+
+#shopMap {
+  display: grid;
+  grid-template-columns: repeat(3, 90px);
+  grid-template-rows: repeat(3, 90px);
+  gap: 8px;
+  justify-content: center;
+  margin: 10px 0;
+}
+
+.lotCell {
+  border-radius: 8px;
+  border: 2px solid #6b5a3f;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  text-align: center;
+  padding: 4px;
+  gap: 4px;
+}
+
+.lotCell.home { background: #4a6b3f; border-color: #7fae5c; font-weight: bold; }
+.lotCell.owned { background: #3f5a6b; border-color: #5c8aae; }
+.lotCell.buyable { background: #423a2c; cursor: pointer; }
+.lotCell.buyable:hover { border-color: #ffd76b; }
+.lotCell.locked { background: #241f1a; color: #6b6156; }
+.lotCell .lotCost { color: #ffd76b; font-size: 11px; }
