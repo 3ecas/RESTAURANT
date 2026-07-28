@@ -37,7 +37,9 @@ const ITEM_DEFS = [
   { type: 'payingBooth', name: 'Paying Booth', icon: '💳', cost: 25 },
   { type: 'table', name: 'Table', icon: '🍽️', cost: 15 },
   { type: 'chair', name: 'Chair', icon: '🪑', cost: 25 },
-  { type: 'wall', name: 'Counter', icon: '🧱', cost: 5 },
+  { type: 'wall', name: 'Wall', icon: '', cost: 5 },
+  { type: 'door', name: 'Door', icon: '🚪', cost: 10 },
+  { type: 'chandelier', name: 'Chandelier', icon: '💡', cost: 40 },
   { type: 'farmPlot', name: 'Wheat Plot', icon: '🌾', cost: 20 },
   { type: 'tomatoFarm', name: 'Tomato Farm', icon: '🍅', cost: 35 },
   { type: 'freezer', name: 'Freezer', icon: '❄️', cost: 25 },
@@ -54,7 +56,7 @@ function createObject(type) {
   switch (type) {
     case 'sink': return Object.assign(base, { washing: false, progress: 0 });
     case 'fridge': return base;
-    case 'stove': return Object.assign(base, { cooking: false, recipe: null, progress: 0, ready: false, reservedBy: null });
+    case 'stove': return Object.assign(base, { cooking: false, recipe: null, progress: 0, ready: false, reservedBy: null, collectedBy: null, cookMultiplier: 1 });
     case 'orderStand': return Object.assign(base, { pending: [], ready: [] });
     case 'payingBooth': return Object.assign(base, { collected: 0 });
     case 'table': return Object.assign(base, { dirty: false, claimedDirty: false });
@@ -65,6 +67,7 @@ function createObject(type) {
     case 'tomatoFarm': return Object.assign(base, { planted: true, progress: 0, ready: false, claimed: false });
     case 'chicken': return Object.assign(base, { fed: 0, grown: false, hungerCooldown: 0, claimed: false });
     case 'chickenFeeder': return Object.assign(base, { wheat: 0 });
+    case 'door': return Object.assign(base, { open: false, closeTimer: 0 });
     case 'spawnPoint': return base;
     default: return base;
   }
@@ -73,8 +76,8 @@ function createObject(type) {
 class Mover {
   constructor(x, y) {
     this.gx = x; this.gy = y;
-    this.px = x * CELL + CELL / 2;
-    this.py = y * CELL + CELL / 2;
+    const p = hexToPixel(x, y);
+    this.px = p.x; this.py = p.y;
     this.facing = 'down';
     this.path = [];
     this.speed = 70;
@@ -85,12 +88,12 @@ class Mover {
   stepMove(dt) {
     if (this.path.length === 0) return false;
     const next = this.path[0];
-    const tx = next.x * CELL + CELL / 2, ty = next.y * CELL + CELL / 2;
-    const dx = tx - this.px, dy = ty - this.py;
+    const target = hexToPixel(next.x, next.y);
+    const dx = target.x - this.px, dy = target.y - this.py;
     const dist = Math.hypot(dx, dy);
     const step = this.speed * dt / 1000;
     if (dist <= step || dist === 0) {
-      this.px = tx; this.py = ty; this.gx = next.x; this.gy = next.y;
+      this.px = target.x; this.py = target.y; this.gx = next.x; this.gy = next.y;
       this.path.shift();
     } else {
       this.px += dx / dist * step;
@@ -104,37 +107,61 @@ class Mover {
 
 class Player {
   constructor(x, y) {
-    this.px = x * CELL + CELL / 2;
-    this.py = y * CELL + CELL / 2;
+    const p = hexToPixel(x, y);
+    this.px = p.x; this.py = p.y;
     this.facing = 'down';
     this.carrying = null;
     this.speed = 120;
+    this.path = []; // click-to-move path; WASD cancels it, it never overrides WASD
+    this.pendingInteractTarget = null; // object to auto-interact with once the path finishes
   }
-  get cellX() { return Math.floor(this.px / CELL); }
-  get cellY() { return Math.floor(this.py / CELL); }
+  get cellX() { return pixelToHex(this.px, this.py).x; }
+  get cellY() { return pixelToHex(this.px, this.py).y; }
+  setPath(path) { this.path = path ? path.slice() : []; }
+  get hasPath() { return this.path.length > 0; }
   update(dt, world, keys) {
     let vx = 0, vy = 0;
     if (keys.has('w')) vy -= 1;
     if (keys.has('s')) vy += 1;
     if (keys.has('a')) vx -= 1;
     if (keys.has('d')) vx += 1;
-    if (vx === 0 && vy === 0) return;
-    const len = Math.hypot(vx, vy);
-    vx /= len; vy /= len;
-    if (Math.abs(vx) > Math.abs(vy)) this.facing = vx > 0 ? 'right' : 'left';
-    else this.facing = vy > 0 ? 'down' : 'up';
-    const hw = 10 * SCALE, hh = 10 * SCALE;
-    const nx = this.px + vx * this.speed * dt / 1000;
-    const ny = this.py + vy * this.speed * dt / 1000;
-    if (this._free(world, nx, this.py, hw, hh)) this.px = nx;
-    if (this._free(world, this.px, ny, hw, hh)) this.py = ny;
+    if (vx !== 0 || vy !== 0) {
+      // manual movement always takes over and cancels any click-to-move path in progress
+      this.path = [];
+      this.pendingInteractTarget = null;
+      const len = Math.hypot(vx, vy);
+      vx /= len; vy /= len;
+      if (Math.abs(vx) > Math.abs(vy)) this.facing = vx > 0 ? 'right' : 'left';
+      else this.facing = vy > 0 ? 'down' : 'up';
+      const hw = 10 * SCALE, hh = 10 * SCALE;
+      const nx = this.px + vx * this.speed * dt / 1000;
+      const ny = this.py + vy * this.speed * dt / 1000;
+      if (this._free(world, nx, this.py, hw, hh)) this.px = nx;
+      if (this._free(world, this.px, ny, hw, hh)) this.py = ny;
+      return;
+    }
+    if (this.path.length > 0) {
+      const next = this.path[0];
+      const target = hexToPixel(next.x, next.y);
+      const dx = target.x - this.px, dy = target.y - this.py;
+      const dist = Math.hypot(dx, dy);
+      const step = this.speed * dt / 1000;
+      if (Math.abs(dx) > Math.abs(dy)) this.facing = dx > 0 ? 'right' : 'left';
+      else if (dy !== 0) this.facing = dy > 0 ? 'down' : 'up';
+      if (dist <= step || dist === 0) {
+        this.px = target.x; this.py = target.y;
+        this.path.shift();
+      } else {
+        this.px += dx / dist * step;
+        this.py += dy / dist * step;
+      }
+    }
   }
   _free(world, cx, cy, hw, hh) {
     const pts = [[cx - hw, cy - hh], [cx + hw, cy - hh], [cx - hw, cy + hh], [cx + hw, cy + hh]];
     for (const [px, py] of pts) {
-      if (px < 0 || py < 0 || px >= COLS * CELL || py >= ROWS * CELL) return false;
-      const gx = Math.floor(px / CELL), gy = Math.floor(py / CELL);
-      if (!world.isWalkable(gx, gy)) return false;
+      const cell = pixelToHex(px, py);
+      if (!world.isWalkable(cell.x, cell.y)) return false;
     }
     return true;
   }
@@ -156,6 +183,7 @@ class Customer extends Mover {
     this.claimed = false;
     this.deliveryClaimed = false; // reserved by a waiter who's bringing this exact order
     this.payBooth = null;
+    this.nearChandelier = false; // set once when served — eats faster and pays a bonus
     this.speed = 40;
   }
 
@@ -216,7 +244,8 @@ class Customer extends Mover {
       case 'walkingToPay':
         if (!this.hasPath) {
           const recipe = getRecipe(this.order);
-          this.payBooth.collected += recipe.price;
+          const bonus = this.nearChandelier ? 1 + CHANDELIER_MONEY_BONUS : 1;
+          this.payBooth.collected += recipe.price * bonus;
           this.state = 'leaving';
           const ec = world.nearestEntranceCell(this.gx, this.gy);
           const path = world.pathTo(this.gx, this.gy, ec.x, ec.y);
@@ -233,9 +262,31 @@ class Customer extends Mover {
 let _staffId = 1;
 const NAMES = ['Alex', 'Sam', 'Jordan', 'Casey', 'Riley', 'Morgan', 'Taylor', 'Jamie', 'Drew', 'Skyler'];
 const STAFF_BASE_SPEED = 48;
-const STAFF_MAX_LEVEL = 10;
-const STAFF_SPEED_PER_LEVEL = 0.05; // +5% movement speed per level
-const STAFF_COOK_SPEED_PER_LEVEL = 0.06; // +6% cooking speed per level (chef only)
+const STAFF_MAX_LEVEL = 5;
+
+// per-role stat tables, indexed [level1, level2, level3, level4, level5].
+// waiter/cleaner: speed bump at 1/2/4/5, +1 capacity at 1, +2 capacity at 3 and again at 5.
+// farmer/chef/rancher/fisherman: speed bump at 2/4/5; farmer also gets +2/+2 capacity at 3/5;
+// chef/rancher/fisherman get a "does the job faster" percentage at 3, again at 5.
+const SPEED_MULT_BY_LEVEL = {
+  waiter:    [1.10, 1.20, 1.20, 1.30, 1.40],
+  cleaner:   [1.10, 1.20, 1.20, 1.30, 1.40],
+  farmer:    [1.00, 1.10, 1.10, 1.20, 1.30],
+  chef:      [1.00, 1.10, 1.10, 1.20, 1.30],
+  rancher:   [1.00, 1.10, 1.10, 1.20, 1.30],
+  fisherman: [1.00, 1.10, 1.10, 1.20, 1.30],
+};
+const CAPACITY_BY_LEVEL = {
+  waiter:  [2, 2, 4, 4, 6],
+  cleaner: [2, 2, 4, 4, 6],
+  farmer:  [5, 5, 7, 7, 9],
+};
+// chef: stove cook speed. rancher: animal-shack process speed. fisherman: catch speed.
+const WORK_MULT_BY_LEVEL = {
+  chef:      [1.00, 1.00, 1.15, 1.15, 1.30],
+  rancher:   [1.00, 1.00, 1.15, 1.15, 1.30],
+  fisherman: [1.00, 1.10, 1.10, 1.20, 1.30],
+};
 
 class StaffMember extends Mover {
   constructor(x, y, role) {
@@ -253,17 +304,23 @@ class StaffMember extends Mover {
   }
 
   applyLevelStats() {
-    this.speed = STAFF_BASE_SPEED * (1 + STAFF_SPEED_PER_LEVEL * (this.level - 1));
-    this.cookMultiplier = 1 + STAFF_COOK_SPEED_PER_LEVEL * (this.level - 1);
+    const lvl = Math.min(this.level, STAFF_MAX_LEVEL);
+    const speedTable = SPEED_MULT_BY_LEVEL[this.role];
+    this.speed = STAFF_BASE_SPEED * (speedTable ? speedTable[lvl - 1] : 1);
+    // chef: stove cook speed. rancher: shack process speed. fisherman: catch speed. baked
+    // into whatever they're working on at the moment it starts, not read continuously —
+    // see updateChef/updateRancher/updateFisherman
+    const workTable = WORK_MULT_BY_LEVEL[this.role];
+    this.workMultiplier = workTable ? workTable[lvl - 1] : 1;
   }
 
-  // how many items they carry in one trip before heading back. Farmer has a flat cap of 5,
-  // but (see updateFarmer) delivers early whenever there's nothing left to harvest or plant —
-  // so a farmer with only 1-2 plots still delivers promptly instead of hoarding for a full batch.
+  // how many items they carry in one trip before heading back. Farmer's table-driven cap
+  // still delivers early (see updateFarmer) whenever there's nothing left to harvest or
+  // plant, so a farmer with only 1-2 plots delivers promptly instead of hoarding for a batch.
   carryCapacity() {
-    if (this.role === 'farmer') return 5;
-    if (this.role !== 'waiter' && this.role !== 'cleaner') return 1;
-    return Math.ceil(this.level / 2);
+    const lvl = Math.min(this.level, STAFF_MAX_LEVEL);
+    const capTable = CAPACITY_BY_LEVEL[this.role];
+    return capTable ? capTable[lvl - 1] : 1;
   }
 
   updateCarryVisual() {
@@ -364,7 +421,8 @@ class StaffMember extends Mover {
           customer.deliveryClaimed = false;
           if (customer.state === 'waitingFood' && customer.order === item.recipe) {
             customer.state = 'eating';
-            customer.timer = EAT_TIME;
+            customer.nearChandelier = world.isNearChandelier(customer.chair.x, customer.chair.y);
+            customer.timer = customer.nearChandelier ? EAT_TIME / CHANDELIER_EAT_SPEEDUP : EAT_TIME;
           }
         }
         this._advanceWaiterDelivery(world);
@@ -405,16 +463,32 @@ class StaffMember extends Mover {
 
   // by the time an order reaches `pending`, the customer already reserved its ingredient
   // and paid its cook cost (see Customer 'thinking') — so the chef doesn't need to re-check
-  // availability here, just fetch it from whichever fridge is closest and cook it
+  // availability here, just fetch it from whichever fridge is closest and cook it.
+  // once the ingredient's on the stove the chef's job there is done — they don't stand
+  // around waiting for it; they (or another idle chef) collect it once it's ready.
   updateChef(dt, world, game) {
     if (this.phase === 'idle') {
+      // priority 1: collect a stove that finished cooking while this chef was off doing
+      // something else — otherwise a finished dish could sit there forever uncollected
+      const readyStove = world.findObjects('stove').find(s => s.ready && !s.collectedBy);
+      if (readyStove) {
+        const path = world.pathToAdjacent(this.gx, this.gy, readyStove.x, readyStove.y);
+        if (path) {
+          readyStove.collectedBy = this;
+          this.task = { stove: readyStove };
+          this.setPath(path);
+          this.phase = 'toCollectStove';
+        }
+        return;
+      }
+      // priority 2: start cooking the next pending order on any free stove
       const stand = world.findObjects('orderStand').find(s => s.pending.length > 0);
       if (stand) {
         const order = stand.pending[0];
         const recipe = getRecipe(order.recipe);
         if (recipe) {
           const fridge = world.nearestObject('fridge', this.gx, this.gy);
-          const stove = world.findObjects('stove').find(s => !s.reservedBy);
+          const stove = world.findObjects('stove').find(s => !s.reservedBy && !s.cooking && !s.ready);
           if (fridge && stove) {
             const path = world.pathToAdjacent(this.gx, this.gy, fridge.x, fridge.y);
             if (path) {
@@ -440,33 +514,48 @@ class StaffMember extends Mover {
           if (stand) stand.pending.unshift(this.task.order);
           stove.reservedBy = null;
           this.carrying = null;
+          this.task = {};
           this.phase = 'idle';
         }
       }
     } else if (this.phase === 'toStove') {
       if (!this.hasPath) {
+        const stove = this.task.stove;
+        stove.cooking = true;
+        stove.recipe = this.task.recipe.id;
+        stove.progress = 0;
+        stove.cookMultiplier = this.workMultiplier; // baked in now, so it sticks even after we walk off
+        stove.reservedBy = null;
         this.carrying = null;
-        this.task.stove.cooking = true;
-        this.task.stove.recipe = this.task.recipe.id;
-        this.task.stove.progress = 0;
-        this.phase = 'cooking';
+        this.task = {};
+        this.phase = 'idle'; // free to start another order or do anything else right away
       }
-    } else if (this.phase === 'cooking') {
-      if (this.task.stove.ready) {
-        this.task.stove.ready = false;
-        this.task.stove.recipe = null;
-        this.carrying = { kind: 'cooked', recipe: this.task.recipe.id };
+    } else if (this.phase === 'toCollectStove') {
+      if (!this.hasPath) {
+        const stove = this.task.stove;
+        if (!stove.ready) {
+          // someone else (e.g. the player) already collected it — look for other work
+          stove.collectedBy = null;
+          this.task = {};
+          this.phase = 'idle';
+          return;
+        }
+        this.carrying = { kind: 'cooked', recipe: stove.recipe };
+        stove.ready = false;
+        stove.recipe = null;
+        stove.collectedBy = null;
+        stove.cookMultiplier = 1;
         const stand = world.findObjects('orderStand')[0];
-        const path = world.pathToAdjacent(this.gx, this.gy, stand.x, stand.y);
-        this.task.stand = stand;
+        const path = stand ? world.pathToAdjacent(this.gx, this.gy, stand.x, stand.y) : null;
+        this.task = { stand };
         this.setPath(path || []);
         this.phase = 'toStand';
       }
     } else if (this.phase === 'toStand') {
       if (!this.hasPath) {
-        this.task.stand.ready.push({ recipe: this.task.order.recipe, claimedBy: null });
+        if (this.task.stand) this.task.stand.ready.push({ recipe: this.carrying.recipe, claimedBy: null });
         this.carrying = null;
-        this.task.stove.reservedBy = null;
+        this.task = {};
         this.phase = 'idle';
       }
     }
@@ -624,7 +713,7 @@ class StaffMember extends Mover {
       }
     } else if (this.phase === 'toWater') {
       if (!this.hasPath) {
-        this.busyTimer = 3000 + Math.random() * 5000; // 3-8s
+        this.busyTimer = (3000 + Math.random() * 5000) / this.workMultiplier; // 3-8s, faster with level
         this.phase = 'fishing';
       }
     } else if (this.phase === 'fishing') {
@@ -711,7 +800,7 @@ class StaffMember extends Mover {
       }
     } else if (this.phase === 'toShack') {
       if (!this.hasPath) {
-        this.busyTimer = CHICKEN_PROCESS_TIME;
+        this.busyTimer = CHICKEN_PROCESS_TIME / this.workMultiplier;
         this.phase = 'processingChicken';
       }
     } else if (this.phase === 'processingChicken') {
