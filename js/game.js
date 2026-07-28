@@ -10,6 +10,7 @@ class Game {
     this.staff = [];
     this.inventory = []; // bought/stored objects not currently on the grid
     this.heldObject = null; // the single object currently in-hand, ready to place
+    this.heldFromInventory = false; // true while placing from a storage stack — keeps refilling after each placement
     this.contextTarget = null;
     this.hoverCell = null;
     this.menuOpen = false;
@@ -25,21 +26,32 @@ class Game {
     this.player = new Player(8, 10);
   }
 
-  // recipes with no `ingredient` are always cookable (e.g. plain rice)
+  // recipes with no `ingredient` need nothing else; ones with a `cost` also need the cash.
+  // rice (no ingredient, no cost) is always cookable — the floor everyone falls back to
   canCookRecipe(recipeId) {
     const recipe = getRecipe(recipeId);
-    if (!recipe || !recipe.ingredient) return true;
-    return (this.ingredients[recipe.ingredient] || 0) > 0;
+    if (!recipe) return false;
+    if (recipe.cost && this.money < recipe.cost) return false;
+    if (recipe.ingredient && (this.ingredients[recipe.ingredient] || 0) <= 0) return false;
+    return true;
   }
 
-  consumeIngredient(recipeId) {
+  // reserves the ingredient stock and charges the cook cost the moment a customer decides
+  // to order this — so a second customer can't also "order" the last unit of something
+  commitRecipe(recipeId) {
     const recipe = getRecipe(recipeId);
-    if (recipe && recipe.ingredient) this.ingredients[recipe.ingredient]--;
+    if (!recipe) return;
+    if (recipe.ingredient) this.ingredients[recipe.ingredient]--;
+    if (recipe.cost) this.addMoney(-recipe.cost);
   }
 
-  refundIngredient(recipeId) {
+  // undoes commitRecipe — used when a customer who already committed to an order leaves
+  // without ever eating it (evicted mid-wait, etc.)
+  releaseRecipe(recipeId) {
     const recipe = getRecipe(recipeId);
-    if (recipe && recipe.ingredient) this.ingredients[recipe.ingredient]++;
+    if (!recipe) return;
+    if (recipe.ingredient) this.ingredients[recipe.ingredient]++;
+    if (recipe.cost) this.addMoney(recipe.cost);
   }
 
   setupLevel() {
@@ -48,8 +60,7 @@ class Game {
     w.place(createObject('spawnPoint'), 7, 7);
     w.generateWater(15);
 
-    // a minimal starting kitchen is pre-placed; prep station stays in storage
-    // so the player has to place at least that themselves
+    // a minimal starting kitchen is pre-placed
     w.place(createObject('fridge'), 8, 8);
     w.place(createObject('orderStand'), 9, 8);
     w.place(createObject('sink'), 10, 8);
@@ -58,10 +69,6 @@ class Game {
     w.place(createObject('table'), 9, 11);
     w.place(createObject('chair'), 9, 10);
     w.place(createObject('chair'), 9, 12);
-
-    this.inventory.push(
-      createObject('prepStation')
-    );
   }
 
   addMoney(amount) {
@@ -88,15 +95,19 @@ class Game {
     if (!def || this.money < def.cost) return;
     this.addMoney(-def.cost);
     this.inventory.push(createObject(type));
-    refreshObjectsTab(this);
+    refreshStorageUI(this);
   }
 
-  beginPlacing(obj) {
+  // picks up one item of this type from storage — the hotbar/expand panel call this.
+  // canvas click-to-place keeps refilling from the same stack until it runs out
+  beginPlacingType(type) {
     if (this.heldObject) return;
-    this.inventory = this.inventory.filter(o => o !== obj);
-    this.heldObject = obj;
+    const idx = this.inventory.findIndex(o => o.type === type);
+    if (idx === -1) return;
+    this.heldObject = this.inventory.splice(idx, 1)[0];
+    this.heldFromInventory = true;
     this.closeMenu();
-    refreshObjectsTab(this);
+    refreshStorageUI(this);
   }
 
   relocateObject(obj) {
@@ -105,8 +116,9 @@ class Game {
     this.evictCustomersFrom(obj);
     this.world.removeAt(obj.x, obj.y);
     this.heldObject = obj;
+    this.heldFromInventory = false; // relocating one specific object — not a storage stack
     this.closeMenu();
-    refreshObjectsTab(this);
+    refreshStorageUI(this);
   }
 
   storeObject(obj) {
@@ -115,7 +127,7 @@ class Game {
     this.evictCustomersFrom(obj);
     this.world.removeAt(obj.x, obj.y);
     this.inventory.push(obj);
-    refreshObjectsTab(this);
+    refreshStorageUI(this);
   }
 
   sellObject(obj) {
@@ -125,7 +137,7 @@ class Game {
     this.evictCustomersFrom(obj);
     this.world.removeAt(obj.x, obj.y);
     this.addMoney(Math.floor(def.cost * 0.5));
-    refreshObjectsTab(this);
+    refreshStorageUI(this);
   }
 
   rotateObject(obj) {
@@ -138,6 +150,9 @@ class Game {
   evictCustomersFrom(obj) {
     for (const c of this.world.customers) {
       if (c.chair === obj || c.table === obj) {
+        // they'd already committed to this order (reserved its ingredient/cost) but never
+        // got to eat it — give that back rather than losing it to a customer who's leaving
+        if (c.state === 'waitingOrder' || c.state === 'waitingFood') this.releaseRecipe(c.order);
         if (c.chair) c.chair.occupied = null;
         c.claimed = false;
         c.state = 'leaving';
@@ -321,26 +336,8 @@ class Game {
       return false;
     }
 
-    if (obj.type === 'prepStation') {
-      if (!player.carrying) {
-        const stand = world.findObjects('orderStand').find(s => s.pending.some(o => getRecipe(o.recipe).needsPrep && this.canCookRecipe(o.recipe)));
-        if (!stand) return false;
-        const idx = stand.pending.findIndex(o => getRecipe(o.recipe).needsPrep && this.canCookRecipe(o.recipe));
-        const order = stand.pending.splice(idx, 1)[0];
-        this.consumeIngredient(order.recipe);
-        player.carrying = { kind: 'prepped', recipe: order.recipe };
-        return true;
-      }
-      if (player.carrying.kind === 'prepped') {
-        const stand = world.findObjects('orderStand')[0];
-        if (stand) stand.pending.unshift({ recipe: player.carrying.recipe });
-        this.refundIngredient(player.carrying.recipe);
-        player.carrying = null;
-        return true;
-      }
-      return false;
-    }
-
+    // any fridge works — they all share the same stock. Ingredient/cost was already
+    // reserved when the customer ordered, so fetching here is just the physical hand-off
     if (obj.type === 'fridge') {
       if (player.carrying && player.carrying.kind === 'wheat') {
         this.ingredients.wheat = (this.ingredients.wheat || 0) + 1;
@@ -348,16 +345,10 @@ class Game {
         return true;
       }
       if (!player.carrying) {
-        const stand = world.findObjects('orderStand').find(s => s.pending.some(o => !getRecipe(o.recipe).needsPrep && this.canCookRecipe(o.recipe)));
+        const stand = world.findObjects('orderStand').find(s => s.pending.length > 0);
         if (!stand) return false;
-        const idx = stand.pending.findIndex(o => !getRecipe(o.recipe).needsPrep && this.canCookRecipe(o.recipe));
-        const order = stand.pending.splice(idx, 1)[0];
-        this.consumeIngredient(order.recipe);
+        const order = stand.pending.shift();
         player.carrying = { kind: 'ingredient', recipe: order.recipe };
-        return true;
-      }
-      if (player.carrying.kind === 'prepped') {
-        player.carrying = { kind: 'ingredient', recipe: player.carrying.recipe };
         return true;
       }
       if (player.carrying.kind === 'ingredient') {
@@ -365,7 +356,6 @@ class Game {
         if (stand) {
           stand.pending.unshift({ recipe: player.carrying.recipe });
         }
-        this.refundIngredient(player.carrying.recipe);
         player.carrying = null;
         return true;
       }
@@ -609,15 +599,22 @@ canvas.addEventListener('click', (e) => {
     ? game.world.canPlaceDoor(gx, gy)
     : game.world.isBuildable(gx, gy);
   if (canPlace) {
+    const placedType = game.heldObject.type;
     game.world.place(game.heldObject, gx, gy);
     game.heldObject = null;
-    refreshObjectsTab(game);
+    // placing from a storage stack? keep going — pull the next one of the same type
+    // straight into hand so multiple can be placed without reopening any menu
+    if (game.heldFromInventory) {
+      const idx = game.inventory.findIndex(o => o.type === placedType);
+      if (idx !== -1) game.heldObject = game.inventory.splice(idx, 1)[0];
+      else game.heldFromInventory = false;
+    }
+    refreshStorageUI(game);
   }
 });
 
 const OBJECT_STYLE = {
   fridge:      { color: '#bfe3ea', icon: '🧊' },
-  prepStation: { color: '#d9a066', icon: '🔪' },
   stove:       { color: '#e0a678', icon: '🔥' },
   orderStand:  { color: '#d8c98a', icon: '🧾' },
   sink:        { color: '#a9c9d8', icon: '🚰' },
@@ -770,9 +767,9 @@ function roundRect(x, y, w, h, r) {
 
 function drawCarried(px, py, carrying) {
   if (!carrying) return;
-  const icons = { ingredient: '🥕', cooked: '🍚', dirty: '🍴', wheat: '🌾', prepped: '🔪', raw_fish: '🐟', prepped_fish: '🦐', raw_chicken: '🐤', chicken: '🍗', wheat_feed: '🌾' };
+  const icons = { ingredient: '🥕', cooked: '🍚', dirty: '🍴', wheat: '🌾', raw_fish: '🐟', raw_chicken: '🐤', chicken: '🍗', wheat_feed: '🌾' };
   const recipe = carrying.recipe ? getRecipe(carrying.recipe) : null;
-  const icon = ((carrying.kind === 'cooked' || carrying.kind === 'prepped') && recipe) ? recipe.icon : (icons[carrying.kind] || '?');
+  const icon = (carrying.kind === 'cooked' && recipe) ? recipe.icon : (icons[carrying.kind] || '?');
   ctx.font = Math.round(12 * SCALE) + 'px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';

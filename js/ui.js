@@ -7,7 +7,6 @@ function initUI(game) {
       document.querySelectorAll('.tabPanel').forEach(p => p.classList.remove('active'));
       btn.classList.add('active');
       document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
-      if (btn.dataset.tab === 'storage') refreshObjectsTab(game);
     });
   });
 
@@ -26,25 +25,37 @@ function initUI(game) {
     document.getElementById('ordersPanel').classList.add('hidden');
   });
 
+  document.getElementById('hotbarExpandBtn').addEventListener('click', () => {
+    document.getElementById('hotbarExpandPanel').classList.toggle('hidden');
+    renderHotbarExpand(game);
+  });
+
   renderPalette(game);
   renderRecipeTable(game);
   renderStaffPanels(game);
   renderStaffTable(game);
-  refreshObjectsTab(game);
+  refreshStorageUI(game);
   renderOrdersPanel(game);
   renderIngredientsBox(game);
   updateMoneyUI(game);
   updateOpenStatusUI(game);
 }
 
-// puts a held object back where it came from (or into storage if that spot's gone) — bound to Escape
+// puts a held object back — into storage if it came from there (its x/y are meaningless
+// leftovers, never a real spot to restore), otherwise back where it was relocated from —
+// bound to Escape
 function cancelHeldObject(game) {
   if (game.heldObject) {
-    const placed = game.world.place(game.heldObject, game.heldObject.x, game.heldObject.y);
-    if (!placed) game.inventory.push(game.heldObject);
+    if (game.heldFromInventory) {
+      game.inventory.push(game.heldObject);
+    } else {
+      const placed = game.world.place(game.heldObject, game.heldObject.x, game.heldObject.y);
+      if (!placed) game.inventory.push(game.heldObject);
+    }
     game.heldObject = null;
   }
-  refreshObjectsTab(game);
+  game.heldFromInventory = false;
+  refreshStorageUI(game);
 }
 
 // green = ready to deliver, grey = still waiting to be cooked
@@ -124,9 +135,9 @@ function renderRecipeTable(game) {
   tbody.innerHTML = '';
   RECIPES.forEach(r => {
     const needs = r.ingredient ? `${INGREDIENT_ICON[r.ingredient] || ''} ${r.ingredient}` : '—';
-    const prep = r.needsPrep ? '🔪 required' : '—';
+    const cost = r.cost ? `$${r.cost}` : '—';
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${r.icon}</td><td>${r.name}</td><td>${needs}</td><td>${prep}</td><td>$${r.price}</td><td>${(r.cookTime / 1000).toFixed(1)}s</td>
+    tr.innerHTML = `<td>${r.icon}</td><td>${r.name}</td><td>${needs}</td><td>${cost}</td><td>$${r.price}</td><td>${(r.cookTime / 1000).toFixed(1)}s</td>
       <td><input type="checkbox" ${r.enabled ? 'checked' : ''} data-id="${r.id}" class="recipeToggle"></td>`;
     tbody.appendChild(tr);
   });
@@ -228,50 +239,103 @@ function renderStaffTable(game) {
   });
 }
 
-const SIDE_ARROW = { up: '↑', down: '↓', left: '←', right: '→' };
+const HOTBAR_SIZE = 9;
 
-function refreshObjectsTab(game) {
-  renderInventoryTable(game);
-  renderPlacedTable(game);
+// groups every item type it doesn't otherwise recognize into a generic bucket
+const ITEM_CATEGORY = {
+  fridge: 'Appliances', stove: 'Appliances', orderStand: 'Appliances', sink: 'Appliances', payingBooth: 'Appliances',
+  table: 'Furniture', chair: 'Furniture', wall: 'Furniture',
+  farmPlot: 'Farming',
+  chicken: 'Ranching', chickenFeeder: 'Ranching', animalShack: 'Ranching',
+  freezer: 'Fishing',
+};
+const CATEGORY_ORDER = ['Appliances', 'Furniture', 'Farming', 'Ranching', 'Fishing'];
+
+function inventoryCounts(game) {
+  const counts = {};
+  const order = [];
+  game.inventory.forEach(o => {
+    if (!(o.type in counts)) order.push(o.type);
+    counts[o.type] = (counts[o.type] || 0) + 1;
+  });
+  return { counts, order };
 }
 
-function renderInventoryTable(game) {
-  const tbody = document.querySelector('#inventoryTable tbody');
-  tbody.innerHTML = '';
-  const items = game.heldObject ? [game.heldObject, ...game.inventory] : game.inventory;
-  items.forEach((obj, i) => {
-    const def = getItemDef(obj.type);
-    const isHeld = obj === game.heldObject;
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${def ? def.icon : '❔'}</td><td>${def ? def.name : obj.type}${isHeld ? ' (in hand)' : ''}</td><td></td>`;
-    if (!isHeld) {
-      const btn = document.createElement('button');
-      btn.textContent = 'Place';
-      btn.className = 'smallBtn';
-      btn.disabled = !!game.heldObject;
-      btn.addEventListener('click', () => game.beginPlacing(obj));
-      tr.children[2].appendChild(btn);
+function buildHotbarSlot(game, type, count) {
+  const def = getItemDef(type);
+  const slot = document.createElement('div');
+  slot.className = 'hotbarSlot';
+  const isHeld = !!game.heldObject && game.heldFromInventory && game.heldObject.type === type;
+  if (isHeld) slot.classList.add('active');
+  else if (game.heldObject) slot.classList.add('disabled');
+  slot.title = def ? def.name : type;
+  slot.innerHTML = `<span class="hotbarIcon">${def ? def.icon : '❔'}</span>${count > 1 ? `<span class="hotbarCount">${count}</span>` : ''}`;
+  slot.addEventListener('click', () => game.beginPlacingType(type));
+  return slot;
+}
+
+// refills every time storage changes: a fixed 9-slot quick bar (bottom center) plus the
+// expandable panel that lists everything, grouped by category
+function refreshStorageUI(game) {
+  renderHotbar(game);
+  renderHotbarExpand(game);
+}
+
+function renderHotbar(game) {
+  const el = document.getElementById('hotbarSlots');
+  if (!el) return;
+  el.innerHTML = '';
+  const { counts, order } = inventoryCounts(game);
+  for (let i = 0; i < HOTBAR_SIZE; i++) {
+    const type = order[i];
+    if (type) {
+      el.appendChild(buildHotbarSlot(game, type, counts[type]));
+    } else {
+      const empty = document.createElement('div');
+      empty.className = 'hotbarSlot empty';
+      el.appendChild(empty);
     }
-    tbody.appendChild(tr);
-  });
-  if (items.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="3" style="color:#a99c86;">Nothing in storage.</td></tr>';
   }
 }
 
-function renderPlacedTable(game) {
-  const tbody = document.querySelector('#placedTable tbody');
-  tbody.innerHTML = '';
-  game.world.objects.forEach(obj => {
-    const def = getItemDef(obj.type);
-    const label = SINGLE_SIDE_TYPES.has(obj.type) ? `${def.name} (usable from ${SIDE_ARROW[obj.side]})` : (def ? def.name : (obj.type === 'door' ? 'Door' : obj.type));
-    const icon = def ? def.icon : (obj.type === 'door' ? '🚪' : '📍');
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${icon}</td><td>${label}</td><td>(${obj.x}, ${obj.y})</td>`;
-    tbody.appendChild(tr);
+function renderHotbarExpand(game) {
+  const el = document.getElementById('hotbarExpandBody');
+  if (!el) return;
+  el.innerHTML = '';
+  const { counts, order } = inventoryCounts(game);
+  if (order.length === 0) {
+    el.innerHTML = '<div class="hotbarExpandEmpty">Nothing in storage.</div>';
+    return;
+  }
+  CATEGORY_ORDER.forEach(cat => {
+    const inCat = order.filter(t => (ITEM_CATEGORY[t] || 'Other') === cat);
+    if (inCat.length === 0) return;
+    const section = document.createElement('div');
+    section.className = 'hotbarCategory';
+    const header = document.createElement('div');
+    header.className = 'hotbarCategoryHeader';
+    header.textContent = cat;
+    section.appendChild(header);
+    const row = document.createElement('div');
+    row.className = 'hotbarCategoryRow';
+    inCat.forEach(type => row.appendChild(buildHotbarSlot(game, type, counts[type])));
+    section.appendChild(row);
+    el.appendChild(section);
   });
-  if (game.world.objects.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="3" style="color:#a99c86;">Nothing placed yet.</td></tr>';
+  // anything not in a known category (shouldn't normally happen) still shows up
+  const leftover = order.filter(t => !ITEM_CATEGORY[t]);
+  if (leftover.length > 0) {
+    const section = document.createElement('div');
+    section.className = 'hotbarCategory';
+    const header = document.createElement('div');
+    header.className = 'hotbarCategoryHeader';
+    header.textContent = 'Other';
+    section.appendChild(header);
+    const row = document.createElement('div');
+    row.className = 'hotbarCategoryRow';
+    leftover.forEach(type => row.appendChild(buildHotbarSlot(game, type, counts[type])));
+    section.appendChild(row);
+    el.appendChild(section);
   }
 }
 

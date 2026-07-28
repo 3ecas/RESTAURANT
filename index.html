@@ -24,6 +24,15 @@
       <div id="ordersList"></div>
     </div>
 
+    <div id="hotbarExpandPanel" class="hidden">
+      <div id="hotbarExpandBody"></div>
+    </div>
+
+    <div id="hotbar">
+      <button id="hotbarExpandBtn" title="Show all storage">▲</button>
+      <div id="hotbarSlots"></div>
+    </div>
+
     <div id="gameArea">
       <canvas id="gameCanvas"></canvas>
       <div id="contextMenu" class="hidden">
@@ -39,7 +48,6 @@
         <button class="tabBtn active" data-tab="build">🧱 Build</button>
         <button class="tabBtn" data-tab="recipes">📖 Recipes</button>
         <button class="tabBtn" data-tab="staff">👥 Staff</button>
-        <button class="tabBtn" data-tab="storage">📦 Storage</button>
         <button class="tabBtn" data-tab="settings">⚙️ Settings</button>
         <button class="tabBtn" data-tab="tutorial">🎓 Tutorial</button>
       </div>
@@ -53,9 +61,9 @@
         </div>
 
         <div id="tab-recipes" class="tabPanel">
-          <p class="tabHelp">Enabled recipes can be ordered by customers. Customers always try to order the priciest recipe whose ingredient is in stock, falling back to cheaper ones — plain rice never runs out. Recipes marked "Prep" must visit a Prep Station before the fridge.</p>
+          <p class="tabHelp">Enabled recipes can be ordered by customers. Customers always try to order the priciest recipe whose ingredient (and cook cost) they can afford, falling back to cheaper ones — plain rice never runs out.</p>
           <table id="recipeTable">
-            <thead><tr><th></th><th>Recipe</th><th>Needs</th><th>Prep</th><th>Price</th><th>Cook time</th><th>Enabled</th></tr></thead>
+            <thead><tr><th></th><th>Recipe</th><th>Needs</th><th>Cost</th><th>Price</th><th>Cook time</th><th>Enabled</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
@@ -66,19 +74,6 @@
           <div id="staffPanels"></div>
           <table id="staffTable">
             <thead><tr><th>Name</th><th>Role</th><th>Level</th><th></th><th></th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-
-        <div id="tab-storage" class="tabPanel">
-          <p class="tabHelp">In storage: items bought or picked up, waiting to be placed. Everything starts here — build your layout from scratch.</p>
-          <table id="inventoryTable">
-            <thead><tr><th></th><th>Object</th><th></th></tr></thead>
-            <tbody></tbody>
-          </table>
-          <p class="tabHelp">Placed in your restaurant:</p>
-          <table id="placedTable">
-            <thead><tr><th></th><th>Object</th><th>Position</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
@@ -97,15 +92,18 @@
             <li><strong>E</strong> — open/close this menu</li>
             <li><strong>ESC</strong> — put down whatever you're currently holding</li>
             <li>Right-click a placed object to Move, Rotate, Store, or Sell it</li>
+            <li>The <strong>quick bar</strong> (bottom center) is your storage — click a slot to start placing that item; click ▲ to see everything, grouped by category</li>
+            <li>If a slot has more than one item, placing one keeps the next in hand automatically — keep clicking tiles to place the whole stack, or press ESC to stop early</li>
           </ul>
           <p class="tabHelp"><strong>Getting started</strong></p>
           <ul class="tutorialList">
-            <li>Everything starts in <strong>Storage</strong> — place your Fridge, Stove, Sink, Order Stand, Paying Booth, Table and Chairs anywhere on the field to build your kitchen</li>
+            <li>Everything starts in storage — place your Fridge, Stove, Sink, Order Stand, Paying Booth, Table and Chairs anywhere on the field to build your kitchen</li>
             <li>Interact with a seated customer's table to take their order, then cook it: grab the ingredient at the <strong>Fridge</strong>, cook it at the <strong>Stove</strong>, and drop the finished dish at the <strong>Order Stand</strong></li>
             <li>A <strong>Counter</strong> works as bar seating too — put a chair next to one and customers will sit and eat right there, no table needed</li>
-            <li>Some recipes (like Shrimp) must visit the <strong>Prep Station</strong> before the fridge</li>
-            <li>Plant wheat on a <strong>Wheat Plot</strong>, wait for it to grow, then harvest it — the fridge shows your current wheat stock</li>
-            <li>Hire staff from the <strong>Staff</strong> tab to automate cooking, serving, cleaning and farming (farmers plant and harvest on their own) — train them to level up</li>
+            <li>Plant wheat on a <strong>Wheat Plot</strong>, wait for it to grow, then harvest it — any <strong>Fridge</strong> shows your current stock, and staff will always use whichever fridge is closest to them</li>
+            <li>Fishermen catch fish near water on their own and freeze it at a <strong>Freezer</strong> — that's the only stop, no extra prep needed</li>
+            <li>Ranchers feed <strong>Chickens</strong> from a <strong>Chicken Feeder</strong> (stocked with wheat from a fridge) and process grown chickens at the <strong>Animal Shack</strong></li>
+            <li>Hire staff from the <strong>Staff</strong> tab to automate cooking, serving, cleaning, farming, fishing and ranching — train them to level up</li>
             <li>Watch the <strong>📋 Orders</strong> panel (top of screen) to see what's cooking and what's ready to deliver</li>
           </ul>
         </div>

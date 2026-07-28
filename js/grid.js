@@ -164,6 +164,19 @@ class World {
     return this.objects.filter(o => o.type === type);
   }
 
+  // whichever object of this type is physically closest to (fromX, fromY) — lets staff
+  // always use the nearest fridge/appliance to them instead of always the first one placed
+  nearestObject(type, fromX, fromY) {
+    const candidates = this.findObjects(type);
+    if (candidates.length === 0) return null;
+    let best = candidates[0], bestDist = Infinity;
+    for (const c of candidates) {
+      const d = Math.abs(c.x - fromX) + Math.abs(c.y - fromY);
+      if (d < bestDist) { bestDist = d; best = c; }
+    }
+    return best;
+  }
+
   randomEntranceCell() {
     const cells = this.entranceCells;
     if (cells.length === 0) return null;

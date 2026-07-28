@@ -1,28 +1,28 @@
 // Recipes, placeable object defs, player, customers, staff
 
-const FARM_GROW_TIME = 20000; // 20s for a planted crop to be ready to harvest
+const FARM_GROW_TIME = 28000; // 28s for a planted crop to be ready to harvest
 
 // chicken raising: fed a few times (not too much — kept modest on purpose) to grow,
 // then processed at the animal shack, then reverts to a chick and starts again
 const FEEDER_CAPACITY = 10;
 const CHICKEN_FEEDS_TO_GROW = 3; // total wheat a chicken eats per growth cycle
-const CHICKEN_EAT_INTERVAL = 4000; // ms between meals when food is available
+const CHICKEN_EAT_INTERVAL = Math.round(25000 / CHICKEN_FEEDS_TO_GROW); // ~25s total to grow, fed promptly
 const CHICKEN_PROCESS_TIME = 6000; // ms to process a grown chicken at the animal shack
 
 // customers always try the priciest recipe first and work their way down until
-// they find one whose ingredient is in stock; rice needs nothing so it's the floor
+// they find one whose ingredient (and, if it costs money, the cash) is available;
+// rice needs neither, so it's always the floor
 const RECIPES = [
-  { id: 'roastChicken', name: 'Roast Chicken', icon: '🍗', cost: 0, price: 15, cookTime: 9000, ingredient: 'chicken', needsPrep: false, enabled: true },
-  { id: 'bread', name: 'Bread', icon: '🍞', cost: 8, price: 8, cookTime: 10000, ingredient: 'wheat', needsPrep: false, enabled: true },
-  { id: 'shrimp', name: 'Shrimp', icon: '🦐', cost: 0, price: 8, cookTime: 7000, ingredient: 'shrimp', needsPrep: true, enabled: true },
-  { id: 'rice', name: 'Rice', icon: '🍚', cost: 0, price: 5, cookTime: 8000, ingredient: null, needsPrep: false, enabled: true },
+  { id: 'roastChicken', name: 'Roast Chicken', icon: '🍗', cost: 0, price: 15, cookTime: 9000, ingredient: 'chicken', enabled: true },
+  { id: 'bread', name: 'Bread', icon: '🍞', cost: 8, price: 8, cookTime: 10000, ingredient: 'wheat', enabled: true },
+  { id: 'shrimp', name: 'Shrimp', icon: '🦐', cost: 0, price: 8, cookTime: 7000, ingredient: 'shrimp', enabled: true },
+  { id: 'rice', name: 'Rice', icon: '🍚', cost: 0, price: 5, cookTime: 8000, ingredient: null, enabled: true },
 ];
 
 function getRecipe(id) { return RECIPES.find(r => r.id === id); }
 
 const ITEM_DEFS = [
   { type: 'fridge', name: 'Fridge', icon: '🧊', cost: 20 },
-  { type: 'prepStation', name: 'Prep Station', icon: '🔪', cost: 25 },
   { type: 'stove', name: 'Stove', icon: '🔥', cost: 30 },
   { type: 'orderStand', name: 'Order Stand', icon: '🧾', cost: 25 },
   { type: 'sink', name: 'Sink', icon: '🚰', cost: 20 },
@@ -167,12 +167,15 @@ class Customer extends Mover {
       case 'thinking':
         this.timer -= dt;
         if (this.timer <= 0) {
-          // always reach for the priciest recipe first, falling back to cheaper ones
-          // whose ingredient isn't in stock — plain rice needs nothing, so it's the floor
+          // always reach for the priciest recipe first, falling back to cheaper ones whose
+          // ingredient isn't in stock (or the till can't cover the cost) — plain rice needs
+          // neither, so it's the floor. Deciding immediately reserves the ingredient/cost so
+          // a second customer can't also "order" the last unit of something already spoken for.
           const enabled = RECIPES.filter(r => r.enabled).sort((a, b) => b.price - a.price);
-          const affordable = enabled.find(r => !r.ingredient || (game.ingredients[r.ingredient] || 0) > 0);
+          const affordable = enabled.find(r => game.canCookRecipe(r.id));
           const fallback = enabled[enabled.length - 1] || RECIPES.find(r => r.id === 'rice') || RECIPES[0];
           this.order = (affordable || fallback).id;
+          game.commitRecipe(this.order);
           this.state = 'waitingOrder';
           this.claimed = false;
         }
@@ -390,48 +393,28 @@ class StaffMember extends Mover {
     }
   }
 
+  // by the time an order reaches `pending`, the customer already reserved its ingredient
+  // and paid its cook cost (see Customer 'thinking') — so the chef doesn't need to re-check
+  // availability here, just fetch it from whichever fridge is closest and cook it
   updateChef(dt, world, game) {
     if (this.phase === 'idle') {
-      const stand = world.findObjects('orderStand').find(s => s.pending.some(o => game.canCookRecipe(o.recipe)));
+      const stand = world.findObjects('orderStand').find(s => s.pending.length > 0);
       if (stand) {
-        const idx = stand.pending.findIndex(o => game.canCookRecipe(o.recipe));
-        const order = stand.pending[idx];
+        const order = stand.pending[0];
         const recipe = getRecipe(order.recipe);
         if (recipe) {
-          const fridge = world.findObjects('fridge')[0];
+          const fridge = world.nearestObject('fridge', this.gx, this.gy);
           const stove = world.findObjects('stove').find(s => !s.reservedBy);
-          const prepStation = recipe.needsPrep ? world.findObjects('prepStation')[0] : null;
-          if (fridge && stove && (!recipe.needsPrep || prepStation)) {
-            const target = recipe.needsPrep ? prepStation : fridge;
-            const path = recipe.needsPrep
-              ? world.pathToAdjacent(this.gx, this.gy, target.x, target.y)
-              : world.pathToAdjacent(this.gx, this.gy, target.x, target.y, fridge);
+          if (fridge && stove) {
+            const path = world.pathToAdjacent(this.gx, this.gy, fridge.x, fridge.y, fridge);
             if (path) {
-              stand.pending.splice(idx, 1);
-              game.consumeIngredient(order.recipe);
+              stand.pending.shift();
               stove.reservedBy = this;
               this.task = { order, recipe, stove };
               this.setPath(path);
-              this.phase = recipe.needsPrep ? 'toPrep' : 'toFridge';
+              this.phase = 'toFridge';
             }
           }
-        }
-      }
-    } else if (this.phase === 'toPrep') {
-      if (!this.hasPath) {
-        this.carrying = { kind: 'prepped', recipe: this.task.recipe.id };
-        const fridge = world.findObjects('fridge')[0];
-        const path = fridge ? world.pathToAdjacent(this.gx, this.gy, fridge.x, fridge.y, fridge) : null;
-        if (path) {
-          this.setPath(path);
-          this.phase = 'toFridge';
-        } else {
-          const stand = world.findObjects('orderStand')[0];
-          if (stand) stand.pending.unshift(this.task.order);
-          game.refundIngredient(this.task.order.recipe);
-          this.task.stove.reservedBy = null;
-          this.carrying = null;
-          this.phase = 'idle';
         }
       }
     } else if (this.phase === 'toFridge') {
@@ -445,7 +428,6 @@ class StaffMember extends Mover {
         } else {
           const stand = world.findObjects('orderStand')[0];
           if (stand) stand.pending.unshift(this.task.order);
-          game.refundIngredient(this.task.order.recipe);
           stove.reservedBy = null;
           this.carrying = null;
           this.phase = 'idle';
@@ -596,9 +578,10 @@ class StaffMember extends Mover {
   }
 
   // if there's no fridge (or no path to it) yet, just keep the harvested wheat and
-  // retry next tick — never silently destroy what's being carried
+  // retry next tick — never silently destroy what's being carried. All fridges share the
+  // same stock, so always walk to whichever one is closest right now.
   _headToFridge(world) {
-    const fridge = world.findObjects('fridge')[0];
+    const fridge = world.nearestObject('fridge', this.gx, this.gy);
     if (!fridge) return;
     const path = world.pathToAdjacent(this.gx, this.gy, fridge.x, fridge.y, fridge);
     if (!path) return;
@@ -606,15 +589,11 @@ class StaffMember extends Mover {
     this.phase = 'toFridge';
   }
 
-  // catch -> freezer (prep) -> fridge, one fish at a time: fish a random cell next to water for
-  // 3-8s, carry the raw catch to a freezer and prep it for 6s, then deliver it to the fridge as shrimp
+  // catch -> freezer, one fish at a time: fish a random cell next to water for 3-8s, then
+  // carry the catch straight to a freezer — that's where all fishing goes, no extra prep stop
   updateFisherman(dt, world, game) {
     if (this.phase === 'idle') {
       const item = this.carryItems[0];
-      if (item && item.kind === 'prepped_fish') {
-        this._headToFridge(world);
-        return;
-      }
       if (item && item.kind === 'raw_fish') {
         this._headToFreezer(world);
         return;
@@ -640,18 +619,6 @@ class StaffMember extends Mover {
         this.phase = 'idle';
       }
     } else if (this.phase === 'toFreezer') {
-      if (!this.hasPath) {
-        this.busyTimer = 6000;
-        this.phase = 'preparing';
-      }
-    } else if (this.phase === 'preparing') {
-      this.busyTimer -= dt;
-      if (this.busyTimer <= 0) {
-        this.carryItems = [{ kind: 'prepped_fish' }];
-        this.updateCarryVisual();
-        this.phase = 'idle';
-      }
-    } else if (this.phase === 'toFridge') {
       if (!this.hasPath) {
         game.ingredients.shrimp = (game.ingredients.shrimp || 0) + this.carryItems.length;
         this.carryItems = [];
@@ -700,10 +667,10 @@ class StaffMember extends Mover {
         }
         return;
       }
-      // priority 2: top up a feeder that's running low, using wheat from the fridge
+      // priority 2: top up a feeder that's running low, using wheat from the nearest fridge
       const feeder = world.findObjects('chickenFeeder').find(f => (f.wheat || 0) < FEEDER_CAPACITY);
       if (feeder && (game.ingredients.wheat || 0) > 0) {
-        const fridge = world.findObjects('fridge')[0];
+        const fridge = world.nearestObject('fridge', this.gx, this.gy);
         if (fridge) {
           const path = world.pathToAdjacent(this.gx, this.gy, fridge.x, fridge.y, fridge);
           if (path) {
@@ -747,9 +714,14 @@ class StaffMember extends Mover {
       }
     } else if (this.phase === 'toFridgeForFeed') {
       if (!this.hasPath) {
-        if ((game.ingredients.wheat || 0) > 0) {
-          game.ingredients.wheat -= 1;
-          this.carryItems = [{ kind: 'wheat_feed' }];
+        // grab as much wheat as the feeder can still take in one trip — up to its full
+        // 10-unit capacity, capped by whatever's actually in stock
+        const feeder = this.task.feeder;
+        const need = FEEDER_CAPACITY - (feeder.wheat || 0);
+        const take = Math.min(FEEDER_CAPACITY, need, game.ingredients.wheat || 0);
+        if (take > 0) {
+          game.ingredients.wheat -= take;
+          this.carryItems = Array.from({ length: take }, () => ({ kind: 'wheat_feed' }));
           this.updateCarryVisual();
         } else {
           this.task = {};
@@ -759,7 +731,7 @@ class StaffMember extends Mover {
     } else if (this.phase === 'toFeeder') {
       if (!this.hasPath) {
         const feeder = this.task.feeder;
-        feeder.wheat = Math.min(FEEDER_CAPACITY, (feeder.wheat || 0) + 1);
+        feeder.wheat = Math.min(FEEDER_CAPACITY, (feeder.wheat || 0) + this.carryItems.length);
         this.carryItems = [];
         this.updateCarryVisual();
         this.task = {};
