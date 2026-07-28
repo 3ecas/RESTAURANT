@@ -19,29 +19,27 @@ class Game {
     this.staffUIRefresh = 0; // throttles the staff table redraw while training counts down
     this.wasTraining = false;
     this.ordersUIRefresh = 0; // throttles the orders panel redraw
-    this.ingredients = { wheat: 0, shrimp: 0, chicken: 0 }; // ingredient stock, consumed by recipes that need them — starts empty, so only rice (which needs nothing) is ever ordered until you have some
+    this.ingredients = { wheat: 0, shrimp: 0, chicken: 0, tomato: 0 }; // ingredient stock, consumed by recipes that need them — starts empty, so only rice (which needs nothing) is ever ordered until you have some
 
     this.setupLevel();
     this.player = new Player(8, 10);
   }
 
-  // recipes with no `ingredient` need nothing else; ones with a `cost` also need the cash.
-  // rice (no ingredient, no cost) is always cookable — the floor everyone falls back to
+  // recipes with no `ingredient` need nothing else; rice (no ingredient) is always
+  // cookable — the floor everyone falls back to. cooking never costs money.
   canCookRecipe(recipeId) {
     const recipe = getRecipe(recipeId);
     if (!recipe) return false;
-    if (recipe.cost && this.money < recipe.cost) return false;
     if (recipe.ingredient && (this.ingredients[recipe.ingredient] || 0) <= 0) return false;
     return true;
   }
 
-  // reserves the ingredient stock and charges the cook cost the moment a customer decides
-  // to order this — so a second customer can't also "order" the last unit of something
+  // reserves the ingredient stock the moment a customer decides to order this — so a
+  // second customer can't also "order" the last unit of something
   commitRecipe(recipeId) {
     const recipe = getRecipe(recipeId);
     if (!recipe) return;
     if (recipe.ingredient) this.ingredients[recipe.ingredient]--;
-    if (recipe.cost) this.addMoney(-recipe.cost);
   }
 
   // undoes commitRecipe — used when a customer who already committed to an order leaves
@@ -50,7 +48,6 @@ class Game {
     const recipe = getRecipe(recipeId);
     if (!recipe) return;
     if (recipe.ingredient) this.ingredients[recipe.ingredient]++;
-    if (recipe.cost) this.addMoney(recipe.cost);
   }
 
   setupLevel() {
@@ -160,7 +157,7 @@ class Game {
     if (obj.type === 'stove' && obj.cooking) return false;
     if (obj.type === 'orderStand' && (obj.pending.length || obj.ready.length)) return false;
     if (obj.type === 'payingBooth' && obj.collected > 0) return false;
-    if (obj.type === 'farmPlot' && obj.ready) return false;
+    if (FARM_CROPS.some(c => c.type === obj.type) && obj.ready) return false;
     if (obj.type === 'chicken' && obj.grown) return false;
     return true;
   }
@@ -310,7 +307,8 @@ class Game {
       return true;
     }
 
-    if (obj.type === 'farmPlot') {
+    const farmCrop = FARM_CROPS.find(c => c.type === obj.type);
+    if (farmCrop) {
       if (!obj.planted) {
         obj.planted = true;
         obj.progress = 0;
@@ -322,7 +320,7 @@ class Game {
         // the crop itself still has to be carried to the fridge to count as stock
         obj.ready = false;
         obj.progress = 0;
-        player.carrying = { kind: 'wheat' };
+        player.carrying = { kind: farmCrop.crop };
         return true;
       }
       return false;
@@ -331,8 +329,9 @@ class Game {
     // any fridge works — they all share the same stock. Ingredient/cost was already
     // reserved when the customer ordered, so fetching here is just the physical hand-off
     if (obj.type === 'fridge') {
-      if (player.carrying && player.carrying.kind === 'wheat') {
-        this.ingredients.wheat = (this.ingredients.wheat || 0) + 1;
+      if (player.carrying && FARM_CROPS.some(c => c.crop === player.carrying.kind)) {
+        const kind = player.carrying.kind;
+        this.ingredients[kind] = (this.ingredients[kind] || 0) + 1;
         player.carrying = null;
         return true;
       }
@@ -451,10 +450,12 @@ class Game {
       }
     }
 
-    for (const plot of this.world.findObjects('farmPlot')) {
-      if (plot.planted && !plot.ready) {
-        plot.progress += dt;
-        if (plot.progress >= FARM_GROW_TIME) plot.ready = true;
+    for (const crop of FARM_CROPS) {
+      for (const plot of this.world.findObjects(crop.type)) {
+        if (plot.planted && !plot.ready) {
+          plot.progress += dt;
+          if (plot.progress >= FARM_GROW_TIME) plot.ready = true;
+        }
       }
     }
 
@@ -613,6 +614,7 @@ const OBJECT_STYLE = {
   spawnPoint:  { color: '#9c9c9c', icon: '👤' },
   door:        { color: 'rgba(120, 200, 120, 0.9)', icon: '🚪' },
   farmPlot:    { color: '#6b4f36', icon: '🟫' },
+  tomatoFarm:  { color: '#6b4f36', icon: '🟫' },
   freezer:     { color: '#bcd9e8', icon: '❄️' },
   chicken:      { color: '#f2e2b6', icon: '🐤' },
   chickenFeeder:{ color: '#c9a878', icon: '🥣' },
@@ -649,19 +651,20 @@ function drawObject(obj) {
   ctx.font = Math.floor(CELL * 0.6) + 'px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+  const farmCrop = FARM_CROPS.find(c => c.type === obj.type);
   let icon = style.icon;
-  if (obj.type === 'farmPlot') icon = obj.ready ? '🌾' : obj.planted ? '🌱' : style.icon;
+  if (farmCrop) icon = obj.ready ? farmCrop.readyIcon : obj.planted ? '🌱' : style.icon;
   else if (obj.type === 'chicken') icon = obj.grown ? '🐓' : '🐤';
   ctx.fillText(icon, px + CELL / 2, py + CELL / 2);
 
-  if (obj.type === 'farmPlot' && obj.planted && !obj.ready) {
+  if (farmCrop && obj.planted && !obj.ready) {
     const pct = Math.min(1, obj.progress / FARM_GROW_TIME);
     ctx.fillStyle = '#2a2a2a';
     ctx.fillRect(px + 3, py + CELL - 7, CELL - 6, 4);
     ctx.fillStyle = '#8bc34a';
     ctx.fillRect(px + 3, py + CELL - 7, (CELL - 6) * pct, 4);
   }
-  if (obj.type === 'farmPlot' && obj.ready) {
+  if (farmCrop && obj.ready) {
     ctx.font = Math.round(10 * SCALE) + 'px sans-serif';
     ctx.fillText('✅', px + CELL - 7, py + 7);
   }
@@ -733,7 +736,7 @@ function roundRect(x, y, w, h, r) {
 
 function drawCarried(px, py, carrying) {
   if (!carrying) return;
-  const icons = { ingredient: '🥕', cooked: '🍚', dirty: '🍴', wheat: '🌾', raw_fish: '🐟', raw_chicken: '🐤', chicken: '🍗', wheat_feed: '🌾' };
+  const icons = { ingredient: '🥕', cooked: '🍚', dirty: '🍴', wheat: '🌾', tomato: '🍅', raw_fish: '🐟', raw_chicken: '🐤', chicken: '🍗', wheat_feed: '🌾' };
   const recipe = carrying.recipe ? getRecipe(carrying.recipe) : null;
   const icon = (carrying.kind === 'cooked' && recipe) ? recipe.icon : (icons[carrying.kind] || '?');
   ctx.font = Math.round(12 * SCALE) + 'px sans-serif';

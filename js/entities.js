@@ -2,6 +2,13 @@
 
 const FARM_GROW_TIME = 28000; // 28s for a planted crop to be ready to harvest
 
+// every farmable plot type, mapped to the ingredient it produces — lets farmers/plots/fridges
+// handle any crop generically instead of duplicating the wheat-specific logic per crop
+const FARM_CROPS = [
+  { type: 'farmPlot', crop: 'wheat', readyIcon: '🌾' },
+  { type: 'tomatoFarm', crop: 'tomato', readyIcon: '🍅' },
+];
+
 // chicken raising: fed a few times (not too much — kept modest on purpose) to grow,
 // then processed at the animal shack, then reverts to a chick and starts again
 const FEEDER_CAPACITY = 10;
@@ -10,13 +17,14 @@ const CHICKEN_EAT_INTERVAL = Math.round(25000 / CHICKEN_FEEDS_TO_GROW); // ~25s 
 const CHICKEN_PROCESS_TIME = 6000; // ms to process a grown chicken at the animal shack
 
 // customers always try the priciest recipe first and work their way down until
-// they find one whose ingredient (and, if it costs money, the cash) is available;
-// rice needs neither, so it's always the floor
+// they find one whose ingredient is available; rice needs none, so it's always the floor.
+// cooking never costs money — customers only ever pay the price
 const RECIPES = [
-  { id: 'roastChicken', name: 'Roast Chicken', icon: '🍗', cost: 0, price: 15, cookTime: 9000, ingredient: 'chicken', enabled: true },
-  { id: 'bread', name: 'Bread', icon: '🍞', cost: 8, price: 8, cookTime: 10000, ingredient: 'wheat', enabled: true },
-  { id: 'shrimp', name: 'Shrimp', icon: '🦐', cost: 0, price: 8, cookTime: 7000, ingredient: 'shrimp', enabled: true },
-  { id: 'rice', name: 'Rice', icon: '🍚', cost: 0, price: 5, cookTime: 8000, ingredient: null, enabled: true },
+  { id: 'roastChicken', name: 'Roast Chicken', icon: '🍗', price: 15, cookTime: 9000, ingredient: 'chicken', enabled: true },
+  { id: 'bread', name: 'Bread', icon: '🍞', price: 8, cookTime: 10000, ingredient: 'wheat', enabled: true },
+  { id: 'shrimp', name: 'Shrimp', icon: '🦐', price: 8, cookTime: 7000, ingredient: 'shrimp', enabled: true },
+  { id: 'rice', name: 'Rice', icon: '🍚', price: 5, cookTime: 8000, ingredient: null, enabled: true },
+  { id: 'tomatoSoup', name: 'Tomato Soup', icon: '🍲', price: 20, cookTime: 35000, ingredient: 'tomato', enabled: true },
 ];
 
 function getRecipe(id) { return RECIPES.find(r => r.id === id); }
@@ -31,6 +39,7 @@ const ITEM_DEFS = [
   { type: 'chair', name: 'Chair', icon: '🪑', cost: 25 },
   { type: 'wall', name: 'Counter', icon: '🧱', cost: 5 },
   { type: 'farmPlot', name: 'Wheat Plot', icon: '🌾', cost: 20 },
+  { type: 'tomatoFarm', name: 'Tomato Farm', icon: '🍅', cost: 35 },
   { type: 'freezer', name: 'Freezer', icon: '❄️', cost: 25 },
   { type: 'chicken', name: 'Chicken', icon: '🐤', cost: 20 },
   { type: 'chickenFeeder', name: 'Chicken Feeder', icon: '🥣', cost: 15 },
@@ -53,6 +62,7 @@ function createObject(type) {
     case 'chair': return Object.assign(base, { occupied: null });
     // starts growing the moment it's placed — no separate "plant" step needed
     case 'farmPlot': return Object.assign(base, { planted: true, progress: 0, ready: false, claimed: false });
+    case 'tomatoFarm': return Object.assign(base, { planted: true, progress: 0, ready: false, claimed: false });
     case 'chicken': return Object.assign(base, { fed: 0, grown: false, hungerCooldown: 0, claimed: false });
     case 'chickenFeeder': return Object.assign(base, { wheat: 0 });
     case 'spawnPoint': return base;
@@ -519,25 +529,29 @@ class StaffMember extends Mover {
         this._headToFridge(world);
         return;
       }
-      // priority 1: harvest anything that's matured
-      const readyPlot = world.findObjects('farmPlot').find(p => p.ready && !p.claimed);
-      if (readyPlot) {
-        readyPlot.claimed = true;
-        this.task = { plot: readyPlot, action: 'harvest' };
-        const path = world.pathToAdjacent(this.gx, this.gy, readyPlot.x, readyPlot.y);
-        this.setPath(path || []);
-        this.phase = 'toPlot';
-        return;
+      // priority 1: harvest anything that's matured, across every crop type
+      for (const crop of FARM_CROPS) {
+        const readyPlot = world.findObjects(crop.type).find(p => p.ready && !p.claimed);
+        if (readyPlot) {
+          readyPlot.claimed = true;
+          this.task = { plot: readyPlot, action: 'harvest', crop: crop.crop };
+          const path = world.pathToAdjacent(this.gx, this.gy, readyPlot.x, readyPlot.y);
+          this.setPath(path || []);
+          this.phase = 'toPlot';
+          return;
+        }
       }
       // priority 2: replant any empty plot so production doesn't stall
-      const emptyPlot = world.findObjects('farmPlot').find(p => !p.planted && !p.claimed);
-      if (emptyPlot) {
-        emptyPlot.claimed = true;
-        this.task = { plot: emptyPlot, action: 'plant' };
-        const path = world.pathToAdjacent(this.gx, this.gy, emptyPlot.x, emptyPlot.y);
-        this.setPath(path || []);
-        this.phase = 'toPlot';
-        return;
+      for (const crop of FARM_CROPS) {
+        const emptyPlot = world.findObjects(crop.type).find(p => !p.planted && !p.claimed);
+        if (emptyPlot) {
+          emptyPlot.claimed = true;
+          this.task = { plot: emptyPlot, action: 'plant', crop: crop.crop };
+          const path = world.pathToAdjacent(this.gx, this.gy, emptyPlot.x, emptyPlot.y);
+          this.setPath(path || []);
+          this.phase = 'toPlot';
+          return;
+        }
       }
       if (this.carryItems.length > 0) this._headToFridge(world);
     } else if (this.phase === 'toPlot') {
@@ -551,7 +565,7 @@ class StaffMember extends Mover {
             plot.ready = false;
             plot.progress = 0;
             plot.claimed = false;
-            this.carryItems.push({ kind: 'wheat' });
+            this.carryItems.push({ kind: this.task.crop });
             this.updateCarryVisual();
           }
         } else { // plant
@@ -569,7 +583,9 @@ class StaffMember extends Mover {
       }
     } else if (this.phase === 'toFridge') {
       if (!this.hasPath) {
-        game.ingredients.wheat = (game.ingredients.wheat || 0) + this.carryItems.length;
+        for (const item of this.carryItems) {
+          game.ingredients[item.kind] = (game.ingredients[item.kind] || 0) + 1;
+        }
         this.carryItems = [];
         this.updateCarryVisual();
         this.phase = 'idle';
@@ -577,7 +593,7 @@ class StaffMember extends Mover {
     }
   }
 
-  // if there's no fridge (or no path to it) yet, just keep the harvested wheat and
+  // if there's no fridge (or no path to it) yet, just keep the harvested crop and
   // retry next tick — never silently destroy what's being carried. All fridges share the
   // same stock, so always walk to whichever one is closest right now.
   _headToFridge(world) {

@@ -131,7 +131,7 @@ function renderPalette(game) {
   if (leftover.length > 0) el.appendChild(buildPaletteCategory(game, 'Other', leftover));
 }
 
-const INGREDIENT_ICON = { wheat: '🌾', shrimp: '🦐', chicken: '🍗' };
+const INGREDIENT_ICON = { wheat: '🌾', shrimp: '🦐', chicken: '🍗', tomato: '🍅' };
 
 // always-visible fridge stock, shown in the corner box below the money box —
 // only ingredients you actually have any of are listed
@@ -157,9 +157,8 @@ function renderRecipeTable(game) {
   tbody.innerHTML = '';
   RECIPES.forEach(r => {
     const needs = r.ingredient ? `${INGREDIENT_ICON[r.ingredient] || ''} ${r.ingredient}` : '—';
-    const cost = r.cost ? `$${r.cost}` : '—';
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${r.icon}</td><td>${r.name}</td><td>${needs}</td><td>${cost}</td><td>$${r.price}</td><td>${(r.cookTime / 1000).toFixed(1)}s</td>
+    tr.innerHTML = `<td>${r.icon}</td><td>${r.name}</td><td>${needs}</td><td>$${r.price}</td><td>${(r.cookTime / 1000).toFixed(1)}s</td>
       <td><input type="checkbox" ${r.enabled ? 'checked' : ''} data-id="${r.id}" class="recipeToggle"></td>`;
     tbody.appendChild(tr);
   });
@@ -267,7 +266,7 @@ const HOTBAR_SIZE = 9;
 const ITEM_CATEGORY = {
   fridge: 'Appliances', stove: 'Appliances', orderStand: 'Appliances', sink: 'Appliances', payingBooth: 'Appliances',
   table: 'Furniture', chair: 'Furniture', wall: 'Furniture',
-  farmPlot: 'Farming',
+  farmPlot: 'Farming', tomatoFarm: 'Farming',
   chicken: 'Ranching', chickenFeeder: 'Ranching', animalShack: 'Ranching',
   freezer: 'Fishing',
 };
