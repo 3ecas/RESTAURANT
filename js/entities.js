@@ -44,8 +44,8 @@ function createObject(type) {
   const base = { type, x: 0, y: 0, id: _objId++ };
   switch (type) {
     case 'sink': return Object.assign(base, { washing: false, progress: 0 });
-    case 'fridge': return Object.assign(base, { side: 'down' });
-    case 'stove': return Object.assign(base, { cooking: false, recipe: null, progress: 0, ready: false, reservedBy: null, side: 'down' });
+    case 'fridge': return base;
+    case 'stove': return Object.assign(base, { cooking: false, recipe: null, progress: 0, ready: false, reservedBy: null });
     case 'orderStand': return Object.assign(base, { pending: [], ready: [] });
     case 'payingBooth': return Object.assign(base, { collected: 0 });
     case 'table': return Object.assign(base, { dirty: false, claimedDirty: false });
@@ -406,7 +406,7 @@ class StaffMember extends Mover {
           const fridge = world.nearestObject('fridge', this.gx, this.gy);
           const stove = world.findObjects('stove').find(s => !s.reservedBy);
           if (fridge && stove) {
-            const path = world.pathToAdjacent(this.gx, this.gy, fridge.x, fridge.y, fridge);
+            const path = world.pathToAdjacent(this.gx, this.gy, fridge.x, fridge.y);
             if (path) {
               stand.pending.shift();
               stove.reservedBy = this;
@@ -421,7 +421,7 @@ class StaffMember extends Mover {
       if (!this.hasPath) {
         this.carrying = { kind: 'ingredient', recipe: this.task.recipe.id };
         const stove = this.task.stove;
-        const path = world.pathToAdjacent(this.gx, this.gy, stove.x, stove.y, stove);
+        const path = world.pathToAdjacent(this.gx, this.gy, stove.x, stove.y);
         if (path) {
           this.setPath(path);
           this.phase = 'toStove';
@@ -583,7 +583,7 @@ class StaffMember extends Mover {
   _headToFridge(world) {
     const fridge = world.nearestObject('fridge', this.gx, this.gy);
     if (!fridge) return;
-    const path = world.pathToAdjacent(this.gx, this.gy, fridge.x, fridge.y, fridge);
+    const path = world.pathToAdjacent(this.gx, this.gy, fridge.x, fridge.y);
     if (!path) return;
     this.setPath(path);
     this.phase = 'toFridge';
@@ -672,7 +672,7 @@ class StaffMember extends Mover {
       if (feeder && (game.ingredients.wheat || 0) > 0) {
         const fridge = world.nearestObject('fridge', this.gx, this.gy);
         if (fridge) {
-          const path = world.pathToAdjacent(this.gx, this.gy, fridge.x, fridge.y, fridge);
+          const path = world.pathToAdjacent(this.gx, this.gy, fridge.x, fridge.y);
           if (path) {
             this.task = { feeder };
             this.setPath(path);

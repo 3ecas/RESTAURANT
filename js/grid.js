@@ -14,21 +14,9 @@ const DIRS = [
   { x: -1, y: 0, name: 'left' },
   { x: 1, y: 0, name: 'right' },
 ];
-const OPPOSITE_DIR = { up: 'down', down: 'up', left: 'right', right: 'left' };
-
-// appliances that can only be used by approaching from one specific side (obj.side)
-const SINGLE_SIDE_TYPES = new Set(['stove', 'fridge']);
 
 // anything a chair can pair up with to seat a customer — a table, or a counter (bar seating)
 const SEATING_SURFACE_TYPES = new Set(['table', 'wall']);
-
-function usableSides(obj) {
-  if (SINGLE_SIDE_TYPES.has(obj.type)) {
-    const d = DIRS.find(d => d.name === obj.side);
-    return d ? [d] : DIRS;
-  }
-  return DIRS;
-}
 
 class World {
   constructor() {
@@ -194,11 +182,10 @@ class World {
     return best;
   }
 
-  // pass the target object as `obj` to restrict candidate cells to its usable side(s)
-  pathToAdjacent(sx, sy, tx, ty, obj) {
-    const dirs = obj ? usableSides(obj) : DIRS;
+  // any of the 4 neighboring cells works — appliances can be used from any side
+  pathToAdjacent(sx, sy, tx, ty) {
     const targets = new Set();
-    for (const d of dirs) {
+    for (const d of DIRS) {
       const nx = tx + d.x, ny = ty + d.y;
       if (this.isWalkable(nx, ny)) targets.add(nx + ',' + ny);
     }

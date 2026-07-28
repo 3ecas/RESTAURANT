@@ -211,11 +211,12 @@ canvas {
 }
 .tutorialList li { margin-bottom: 4px; }
 
-#palette {
+#palette { margin-bottom: 12px; }
+
+.paletteGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(62px, 1fr));
   gap: 6px;
-  margin-bottom: 12px;
 }
 
 .paletteItem {

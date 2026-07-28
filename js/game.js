@@ -1,6 +1,5 @@
 // Main game: setup, input, buy/place/move/store/sell, land expansion, loop, rendering
 
-const ROTATE_ORDER = ['up', 'right', 'down', 'left'];
 const MAX_WAITING = 6; // most customers that can stand at the door waiting for a seat
 
 class Game {
@@ -60,15 +59,16 @@ class Game {
     w.place(createObject('spawnPoint'), 7, 7);
     w.generateWater(15);
 
-    // a minimal starting kitchen is pre-placed
-    w.place(createObject('fridge'), 8, 8);
-    w.place(createObject('orderStand'), 9, 8);
-    w.place(createObject('sink'), 10, 8);
-    w.place(createObject('payingBooth'), 11, 8);
-    w.place(createObject('stove'), 12, 8);
-    w.place(createObject('table'), 9, 11);
-    w.place(createObject('chair'), 9, 10);
-    w.place(createObject('chair'), 9, 12);
+    // a minimal starting kitchen is pre-placed — spread out a bit, except the fridge and
+    // stove (kept side by side) and the paying booth (kept right next to the door)
+    w.place(createObject('fridge'), 9, 7);
+    w.place(createObject('stove'), 10, 7);
+    w.place(createObject('orderStand'), 12, 7);
+    w.place(createObject('sink'), 14, 7);
+    w.place(createObject('payingBooth'), 11, 13);
+    w.place(createObject('table'), 9, 10);
+    w.place(createObject('chair'), 9, 9);
+    w.place(createObject('chair'), 9, 11);
   }
 
   addMoney(amount) {
@@ -138,13 +138,6 @@ class Game {
     this.world.removeAt(obj.x, obj.y);
     this.addMoney(Math.floor(def.cost * 0.5));
     refreshStorageUI(this);
-  }
-
-  rotateObject(obj) {
-    hideContextMenu();
-    if (!SINGLE_SIDE_TYPES.has(obj.type)) return;
-    const i = ROTATE_ORDER.indexOf(obj.side);
-    obj.side = ROTATE_ORDER[(i + 1) % ROTATE_ORDER.length];
   }
 
   evictCustomersFrom(obj) {
@@ -290,7 +283,6 @@ class Game {
     for (const d of DIRS) {
       const obj = world.cellAt(cx + d.x, cy + d.y);
       if (!obj) continue;
-      if (SINGLE_SIDE_TYPES.has(obj.type) && OPPOSITE_DIR[d.name] !== obj.side) continue;
       if (this.tryInteractWith(obj)) return;
     }
   }
@@ -378,13 +370,10 @@ class Game {
         obj.reservedBy = null;
         return true;
       }
-      if (player.carrying && player.carrying.kind === 'cooked' && !obj.cooking && !obj.ready && !obj.reservedBy) {
-        obj.ready = true;
-        obj.recipe = player.carrying.recipe;
-        obj.reservedBy = 'player';
-        player.carrying = null;
-        return true;
-      }
+      // note: deliberately no "put a cooked dish back on an idle stove" case — the order
+      // stand has unlimited capacity, so there's never a real reason to park it here, and
+      // doing so used to silently swallow the interact when a stove happened to be checked
+      // before a nearby order stand
       return false;
     }
 
@@ -586,7 +575,6 @@ document.addEventListener('click', (e) => {
 });
 
 document.getElementById('ctxMove').addEventListener('click', () => { if (game.contextTarget) game.relocateObject(game.contextTarget); });
-document.getElementById('ctxRotate').addEventListener('click', () => { if (game.contextTarget) game.rotateObject(game.contextTarget); });
 document.getElementById('ctxStore').addEventListener('click', () => { if (game.contextTarget) game.storeObject(game.contextTarget); });
 document.getElementById('ctxSell').addEventListener('click', () => { if (game.contextTarget) game.sellObject(game.contextTarget); });
 
@@ -719,28 +707,6 @@ function drawObject(obj) {
   if (obj.type === 'payingBooth' && obj.collected > 0) {
     badge(px + CELL - 8, py + 7, '$' + obj.collected, '#2e7d32');
   }
-
-  if (SINGLE_SIDE_TYPES.has(obj.type)) drawSideIndicator(px, py, obj.side);
-}
-
-function drawSideIndicator(px, py, side) {
-  const cx = px + CELL / 2, cy = py + CELL / 2;
-  const a = 5 * SCALE, b = 4 * SCALE, c = 3 * SCALE;
-  const points = {
-    up:    [[cx - a, py + b], [cx + a, py + b], [cx, py - c]],
-    down:  [[cx - a, py + CELL - b], [cx + a, py + CELL - b], [cx, py + CELL + c]],
-    left:  [[px + b, cy - a], [px + b, cy + a], [px - c, cy]],
-    right: [[px + CELL - b, cy - a], [px + CELL - b, cy + a], [px + CELL + c, cy]],
-  };
-  const tri = points[side];
-  if (!tri) return;
-  ctx.beginPath();
-  ctx.moveTo(tri[0][0], tri[0][1]);
-  ctx.lineTo(tri[1][0], tri[1][1]);
-  ctx.lineTo(tri[2][0], tri[2][1]);
-  ctx.closePath();
-  ctx.fillStyle = '#ffd76b';
-  ctx.fill();
 }
 
 function badge(x, y, num, color) {
