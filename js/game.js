@@ -1,11 +1,15 @@
 // Main game: setup, input, buy/place/move/store/sell, land expansion, loop, rendering
 
 const MAX_WAITING = 6; // most customers that can stand at the door waiting for a seat
+const SHOP_REFRESH_INTERVAL = 5 * 60 * 1000; // shop restocks every 5 minutes
+// these restock to a fixed amount instead of the usual random 0-3 — cheap staples that
+// shouldn't be a bottleneck
+const FIXED_SHOP_STOCK = { floorTile: 15, floorTileBW: 15, wall: 15 };
 
 class Game {
   constructor() {
     this.world = new World();
-    this.money = 0;
+    this.money = 1000;
     this.staff = [];
     this.inventory = []; // bought/stored objects not currently on the grid
     this.heldObject = null; // the single object currently in-hand, ready to place
@@ -19,19 +23,21 @@ class Game {
     this.staffUIRefresh = 0; // throttles the staff table redraw while training counts down
     this.wasTraining = false;
     this.ordersUIRefresh = 0; // throttles the orders panel redraw
-    this.ingredients = { wheat: 0, shrimp: 0, chicken: 0, tomato: 0 }; // ingredient stock, consumed by recipes that need them — starts empty, so only rice (which needs nothing) is ever ordered until you have some
+    this.ingredients = { wheat: 0, shrimp: 0, chicken: 0, tomato: 0, cabbage: 0, corn: 0, potato: 0 }; // ingredient stock, consumed by recipes that need them — starts empty, so only rice (which needs nothing) is ever ordered until you have some
+    this.shopStock = {}; // how many of each shop item are currently available to buy
+    this.shopRefreshTimer = SHOP_REFRESH_INTERVAL;
+    this.refreshShopStock();
 
     this.setupLevel();
     this.player = new Player(8, 10);
   }
 
-  // recipes with no `ingredient` need nothing else; rice (no ingredient) is always
-  // cookable — the floor everyone falls back to. cooking never costs money.
+  // recipes with no ingredients need nothing else; rice is always cookable — the floor
+  // everyone falls back to. cooking never costs money.
   canCookRecipe(recipeId) {
     const recipe = getRecipe(recipeId);
     if (!recipe) return false;
-    if (recipe.ingredient && (this.ingredients[recipe.ingredient] || 0) <= 0) return false;
-    return true;
+    return recipe.ingredients.every(ing => (this.ingredients[ing.name] || 0) >= ing.qty);
   }
 
   // reserves the ingredient stock the moment a customer decides to order this — so a
@@ -39,7 +45,7 @@ class Game {
   commitRecipe(recipeId) {
     const recipe = getRecipe(recipeId);
     if (!recipe) return;
-    if (recipe.ingredient) this.ingredients[recipe.ingredient]--;
+    for (const ing of recipe.ingredients) this.ingredients[ing.name] -= ing.qty;
   }
 
   // undoes commitRecipe — used when a customer who already committed to an order leaves
@@ -47,7 +53,16 @@ class Game {
   releaseRecipe(recipeId) {
     const recipe = getRecipe(recipeId);
     if (!recipe) return;
-    if (recipe.ingredient) this.ingredients[recipe.ingredient]++;
+    for (const ing of recipe.ingredients) this.ingredients[ing.name] += ing.qty;
+  }
+
+  // the shop only ever stocks a handful of each item at a time — restocked randomly
+  // (0-3 of each) on a timer, so you can't just buy an unlimited pile of chairs
+  refreshShopStock() {
+    for (const def of ITEM_DEFS) {
+      this.shopStock[def.type] = FIXED_SHOP_STOCK[def.type] ?? Math.floor(Math.random() * 4);
+    }
+    renderPalette(this);
   }
 
   setupLevel() {
@@ -90,7 +105,9 @@ class Game {
   buyItem(type) {
     const def = getItemDef(type);
     if (!def || this.money < def.cost) return;
-    this.addMoney(-def.cost);
+    if ((this.shopStock[type] || 0) <= 0) return;
+    this.shopStock[type]--;
+    this.addMoney(-def.cost); // also re-renders the palette, reflecting the new stock count
     this.inventory.push(createObject(type));
     refreshStorageUI(this);
   }
@@ -109,7 +126,7 @@ class Game {
 
   relocateObject(obj) {
     hideContextMenu();
-    if (this.heldObject || !this.canRemoveObject(obj)) return;
+    if (this.heldObject || !this.canMoveObject(obj)) return;
     this.evictCustomersFrom(obj);
     this.world.removeAt(obj.x, obj.y);
     this.heldObject = obj;
@@ -153,10 +170,21 @@ class Game {
     }
   }
 
+  // gates Store/Sell — both destroy the object, so anything it's currently holding
+  // (pending orders, collected cash, a ready crop/chicken) would just be lost
   canRemoveObject(obj) {
     if (obj.type === 'stove' && obj.cooking) return false;
     if (obj.type === 'orderStand' && (obj.pending.length || obj.ready.length)) return false;
     if (obj.type === 'payingBooth' && obj.collected > 0) return false;
+    if (FARM_CROPS.some(c => c.type === obj.type) && obj.ready) return false;
+    if (obj.type === 'chicken' && obj.grown) return false;
+    return true;
+  }
+
+  // gates Move — relocating keeps the same object (and everything on/in it), so an order
+  // stand's pending orders and a paying booth's collected cash are safe to carry along
+  canMoveObject(obj) {
+    if (obj.type === 'stove' && obj.cooking) return false;
     if (FARM_CROPS.some(c => c.type === obj.type) && obj.ready) return false;
     if (obj.type === 'chicken' && obj.grown) return false;
     return true;
@@ -197,8 +225,9 @@ class Game {
   findSpawnSpot() {
     const sp = this.world.findObjects('spawnPoint')[0];
     if (sp) {
-      for (const n of hexNeighbors(sp.x, sp.y)) {
-        if (this.world.isWalkable(n.x, n.y)) return { x: n.x, y: n.y };
+      for (const d of DIRS) {
+        const nx = sp.x + d.x, ny = sp.y + d.y;
+        if (this.world.isWalkable(nx, ny)) return { x: nx, y: ny };
       }
     }
     for (let y = 0; y < ROWS; y++) {
@@ -276,8 +305,8 @@ class Game {
     // facing/adjacent targets take priority — otherwise standing on a walkable object
     // (a ready farm plot, say) while facing something else (a fridge) would silently
     // hijack the interact into harvesting instead of reaching the thing you meant to use
-    for (const n of hexNeighbors(cx, cy)) {
-      const obj = world.cellAt(n.x, n.y);
+    for (const d of DIRS) {
+      const obj = world.cellAt(cx + d.x, cy + d.y);
       if (!obj) continue;
       if (this.tryInteractWith(obj)) return;
     }
@@ -424,8 +453,7 @@ class Game {
       const customer = chairs.map(c => c.occupied).find(c => c && c.state === 'waitingFood' && c.order === player.carrying.recipe);
       if (customer) {
         customer.state = 'eating';
-        customer.nearChandelier = world.isNearChandelier(customer.chair.x, customer.chair.y);
-        customer.timer = customer.nearChandelier ? EAT_TIME / CHANDELIER_EAT_SPEEDUP : EAT_TIME;
+        customer.timer = EAT_TIME;
         player.carrying = null;
         did = true;
       }
@@ -479,22 +507,6 @@ class Game {
       }
     }
 
-    // the door swings open while anyone (player, staff, or a customer) is standing in its
-    // doorway, and stays open briefly after so it doesn't flicker open/closed constantly
-    for (const door of this.world.findObjects('door')) {
-      const at = (gx, gy) => (gx === door.x && gy === door.y) || (gx === door.x2 && gy === door.y2);
-      const someoneThere = at(this.player.cellX, this.player.cellY) ||
-        this.staff.some(s => at(s.gx, s.gy)) ||
-        this.world.customers.some(c => at(c.gx, c.gy));
-      if (someoneThere) {
-        door.open = true;
-        door.closeTimer = 600;
-      } else if (door.open) {
-        door.closeTimer -= dt;
-        if (door.closeTimer <= 0) door.open = false;
-      }
-    }
-
     for (const s of this.staff) s.update(dt, this.world, this);
 
     // keep refreshing while anyone is training, plus one guaranteed extra render the moment
@@ -527,15 +539,22 @@ class Game {
       this.trySpawnGroup();
       this.spawnTimer = 6000 + Math.random() * 6000;
     }
+
+    this.shopRefreshTimer -= dt;
+    if (this.shopRefreshTimer <= 0) {
+      this.shopRefreshTimer = SHOP_REFRESH_INTERVAL;
+      this.refreshShopStock();
+    }
   }
 }
 
 // ---------- boilerplate: canvas, input, loop, rendering ----------
 
 const canvas = document.getElementById('gameCanvas');
-canvas.width = Math.ceil(HEX_WIDTH * (COLS + 0.5)) + 2;
-canvas.height = Math.ceil(HEX_VERT * (ROWS - 1) + HEX_SIZE * 2) + 2;
+canvas.width = COLS * CELL;
+canvas.height = ROWS * CELL;
 const ctx = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false; // keep pixel-art sprites crisp when scaled to fill a cell
 
 const game = new Game();
 initUI(game);
@@ -546,8 +565,7 @@ function canvasCellFromEvent(e) {
   const scaleY = canvas.height / rect.height;
   const mx = (e.clientX - rect.left) * scaleX;
   const my = (e.clientY - rect.top) * scaleY;
-  const cell = pixelToHex(mx, my);
-  return { gx: cell.x, gy: cell.y };
+  return { gx: Math.floor(mx / CELL), gy: Math.floor(my / CELL) };
 }
 
 document.addEventListener('click', (e) => {
@@ -600,27 +618,38 @@ document.getElementById('ctxMove').addEventListener('click', () => { if (game.co
 document.getElementById('ctxStore').addEventListener('click', () => { if (game.contextTarget) game.storeObject(game.contextTarget); });
 document.getElementById('ctxSell').addEventListener('click', () => { if (game.contextTarget) game.sellObject(game.contextTarget); });
 
+// after placing one item from a storage stack, keep going — pull the next one of the
+// same type straight into hand so multiple can be placed without reopening any menu
+function continuePlacingFromStack(placedType) {
+  game.heldObject = null;
+  if (game.heldFromInventory) {
+    const idx = game.inventory.findIndex(o => o.type === placedType);
+    if (idx !== -1) game.heldObject = game.inventory.splice(idx, 1)[0];
+    else game.heldFromInventory = false;
+  }
+  refreshStorageUI(game);
+}
+
 canvas.addEventListener('click', (e) => {
   if (!document.getElementById('contextMenu').classList.contains('hidden')) return;
   const { gx, gy } = canvasCellFromEvent(e);
   if (!game.world.inBounds(gx, gy)) return;
 
   if (game.heldObject) {
+    // flooring is a background layer, not a world object — it paints onto any
+    // in-bounds, non-water cell regardless of what's already placed there
+    if (FLOOR_TILE_TYPES.has(game.heldObject.type)) {
+      const placedType = game.heldObject.type;
+      if (game.world.placeFloorTile(gx, gy, placedType)) continuePlacingFromStack(placedType);
+      return;
+    }
     const canPlace = game.heldObject.type === 'door'
       ? game.world.canPlaceDoor(gx, gy)
       : game.world.isBuildable(gx, gy);
     if (canPlace) {
       const placedType = game.heldObject.type;
       game.world.place(game.heldObject, gx, gy);
-      game.heldObject = null;
-      // placing from a storage stack? keep going — pull the next one of the same type
-      // straight into hand so multiple can be placed without reopening any menu
-      if (game.heldFromInventory) {
-        const idx = game.inventory.findIndex(o => o.type === placedType);
-        if (idx !== -1) game.heldObject = game.inventory.splice(idx, 1)[0];
-        else game.heldFromInventory = false;
-      }
-      refreshStorageUI(game);
+      continuePlacingFromStack(placedType);
     }
     return;
   }
@@ -629,7 +658,7 @@ canvas.addEventListener('click', (e) => {
   // auto-interact with it (same effect as walking up and pressing SPACE)
   const obj = game.world.cellAt(gx, gy);
   if (obj) {
-    const path = game.world.pathToAdjacent(game.player.cellX, game.player.cellY, gx, gy, obj);
+    const path = game.world.pathToAdjacent(game.player.cellX, game.player.cellY, gx, gy);
     if (path) {
       game.player.setPath(path);
       game.player.pendingInteractTarget = obj;
@@ -651,12 +680,14 @@ const OBJECT_STYLE = {
   payingBooth: { color: '#f2d675', icon: '💳' },
   table:       { color: '#8a6b3f', icon: '🍽️' },
   chair:       { color: '#6b5a3f', icon: '🪑' },
-  wall:        { color: '#707070', icon: '' },
-  chandelier:  { color: '#3a332a', icon: '💡' },
+  wall:        { color: '#3a332a', icon: '🧱' },
   spawnPoint:  { color: '#9c9c9c', icon: '👤' },
   door:        { color: 'rgba(120, 200, 120, 0.9)', icon: '🚪' },
   farmPlot:    { color: '#6b4f36', icon: '🟫' },
   tomatoFarm:  { color: '#6b4f36', icon: '🟫' },
+  cabbageFarm: { color: '#6b4f36', icon: '🟫' },
+  cornFarm:    { color: '#6b4f36', icon: '🟫' },
+  potatoFarm:  { color: '#6b4f36', icon: '🟫' },
   freezer:     { color: '#bcd9e8', icon: '❄️' },
   chicken:      { color: '#f2e2b6', icon: '🐤' },
   chickenFeeder:{ color: '#c9a878', icon: '🥣' },
@@ -669,111 +700,133 @@ const PLAYER_OUTLINE = '#1f3f99';
 const CUSTOMER_COLOR = '#9e9e9e';
 const CUSTOMER_OUTLINE = '#5a5a5a';
 
-function hexPath(cx, cy, size) {
+function roundRect(x, y, w, h, r) {
   ctx.beginPath();
-  const corners = hexCorners(cx, cy, size);
-  ctx.moveTo(corners[0][0], corners[0][1]);
-  for (let i = 1; i < corners.length; i++) ctx.lineTo(corners[i][0], corners[i][1]);
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
 }
 
-// one open field, buildable everywhere — hex outline per cell plus a border around the whole playable area
-function drawGrid() {
-  ctx.strokeStyle = 'rgba(0,0,0,0.15)';
-  ctx.lineWidth = 1;
+// the undeveloped ground everywhere — bottom-most layer, below placed floor tiles/objects/characters
+function drawGrassBackground() {
   for (let y = 0; y < ROWS; y++) {
     for (let x = 0; x < COLS; x++) {
-      const { x: cx, y: cy } = hexToPixel(x, y);
-      hexPath(cx, cy, HEX_SIZE);
-      ctx.stroke();
+      const img = getImage(game.world.grassVariant[y][x]);
+      if (img.complete && img.naturalWidth > 0) {
+        ctx.drawImage(img, x * CELL, y * CELL, CELL, CELL);
+      } else {
+        ctx.fillStyle = '#4a7a3a';
+        ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+      }
     }
   }
+}
+
+// flooring the player has bought and placed — sits above the grass, below everything else
+function drawFloorTiles() {
+  for (const [key, type] of game.world.floorTiles) {
+    const [x, y] = key.split(',').map(Number);
+    const img = getIconImage(type);
+    if (img && img.complete && img.naturalWidth > 0) {
+      ctx.drawImage(img, x * CELL, y * CELL, CELL, CELL);
+    } else {
+      ctx.fillStyle = '#8a6b3f';
+      ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+    }
+  }
+}
+
+// one open field, buildable everywhere — just an outline around the whole playable area
+function drawGrid() {
   ctx.strokeStyle = 'rgba(0,0,0,0.35)';
   ctx.lineWidth = 2;
-  ctx.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
+  ctx.strokeRect(1, 1, COLS * CELL - 2, ROWS * CELL - 2);
 }
 
 function drawWater() {
   ctx.fillStyle = '#3a6ea5';
   for (const key of game.world.water) {
     const [x, y] = key.split(',').map(Number);
-    const { x: cx, y: cy } = hexToPixel(x, y);
-    hexPath(cx, cy, HEX_SIZE);
-    ctx.fill();
+    ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
   }
 }
 
 function drawObject(obj) {
   const style = OBJECT_STYLE[obj.type];
-  const { x: cx, y: cy } = hexToPixel(obj.x, obj.y);
-  const left = cx - HEX_WIDTH / 2 + 3, right = cx + HEX_WIDTH / 2 - 3;
-  const barY = cy + HEX_SIZE * 0.6;
-  const trX = cx + HEX_SIZE * 0.55, trY = cy - HEX_SIZE * 0.55; // top-right corner badge spot
-  const tlX = cx - HEX_SIZE * 0.55, tlY = cy - HEX_SIZE * 0.55; // top-left corner badge spot
-  ctx.fillStyle = style.color;
-  hexPath(cx, cy, HEX_SIZE - 3);
-  ctx.fill();
-  ctx.font = Math.floor(HEX_SIZE * 1.1) + 'px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
+  const px = obj.x * CELL, py = obj.y * CELL;
   const farmCrop = FARM_CROPS.find(c => c.type === obj.type);
   let icon = style.icon;
   if (farmCrop) icon = obj.ready ? farmCrop.readyIcon : obj.planted ? '🌱' : style.icon;
   else if (obj.type === 'chicken') icon = obj.grown ? '🐓' : '🐤';
-  ctx.fillText(icon, cx, cy);
+
+  const img = getIconImage(obj.type);
+  if (img && img.complete && img.naturalWidth > 0) {
+    ctx.drawImage(img, px, py, CELL, CELL);
+  } else {
+    ctx.fillStyle = style.color;
+    roundRect(px + 2, py + 2, CELL - 4, CELL - 4, 5);
+    ctx.fill();
+    ctx.font = Math.floor(CELL * 0.6) + 'px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(icon, px + CELL / 2, py + CELL / 2);
+  }
 
   if (farmCrop && obj.planted && !obj.ready) {
     const pct = Math.min(1, obj.progress / FARM_GROW_TIME);
     ctx.fillStyle = '#2a2a2a';
-    ctx.fillRect(left, barY, right - left, 4);
+    ctx.fillRect(px + 3, py + CELL - 7, CELL - 6, 4);
     ctx.fillStyle = '#8bc34a';
-    ctx.fillRect(left, barY, (right - left) * pct, 4);
+    ctx.fillRect(px + 3, py + CELL - 7, (CELL - 6) * pct, 4);
   }
   if (farmCrop && obj.ready) {
     ctx.font = Math.round(10 * SCALE) + 'px sans-serif';
-    ctx.fillText('✅', trX, trY);
+    ctx.fillText('✅', px + CELL - 7, py + 7);
   }
 
   if (obj.type === 'chicken' && !obj.grown) {
     const pct = Math.min(1, obj.fed / CHICKEN_FEEDS_TO_GROW);
     ctx.fillStyle = '#2a2a2a';
-    ctx.fillRect(left, barY, right - left, 4);
+    ctx.fillRect(px + 3, py + CELL - 7, CELL - 6, 4);
     ctx.fillStyle = '#e0b04a';
-    ctx.fillRect(left, barY, (right - left) * pct, 4);
+    ctx.fillRect(px + 3, py + CELL - 7, (CELL - 6) * pct, 4);
   }
   if (obj.type === 'chicken' && obj.grown) {
     ctx.font = Math.round(10 * SCALE) + 'px sans-serif';
-    ctx.fillText('✅', trX, trY);
+    ctx.fillText('✅', px + CELL - 7, py + 7);
   }
   if (obj.type === 'chickenFeeder') {
-    badge(trX, trY, obj.wheat || 0, '#c9a227');
+    badge(px + CELL - 8, py + 7, obj.wheat || 0, '#c9a227');
   }
 
   if (obj.type === 'stove' && (obj.cooking || obj.ready)) {
     const recipe = getRecipe(obj.recipe);
     const pct = obj.ready ? 1 : Math.min(1, obj.progress / (recipe ? recipe.cookTime : 1));
     ctx.fillStyle = '#2a2a2a';
-    ctx.fillRect(left, barY, right - left, 4);
+    ctx.fillRect(px + 3, py + CELL - 7, CELL - 6, 4);
     ctx.fillStyle = obj.ready ? '#6fce6f' : '#ffd76b';
-    ctx.fillRect(left, barY, (right - left) * pct, 4);
+    ctx.fillRect(px + 3, py + CELL - 7, (CELL - 6) * pct, 4);
     if (obj.ready) {
       ctx.font = Math.round(10 * SCALE) + 'px sans-serif';
-      ctx.fillText('✅', trX, trY);
+      ctx.fillText('✅', px + CELL - 7, py + 7);
     }
   }
 
   if (obj.type === 'orderStand') {
-    if (obj.pending.length > 0) badge(tlX, trY, obj.pending.length, '#e05252');
-    if (obj.ready.length > 0) badge(trX, trY, obj.ready.length, '#4caf50');
+    if (obj.pending.length > 0) badge(px + 8, py + 7, obj.pending.length, '#e05252');
+    if (obj.ready.length > 0) badge(px + CELL - 8, py + 7, obj.ready.length, '#4caf50');
   }
 
   if (SEATING_SURFACE_TYPES.has(obj.type) && obj.dirty) {
     ctx.font = Math.round(11 * SCALE) + 'px sans-serif';
-    ctx.fillText('🍴', cx, cy - HEX_SIZE * 0.55);
+    ctx.fillText('🍴', px + CELL / 2, py + 9);
   }
 
   if (obj.type === 'payingBooth' && obj.collected > 0) {
-    badge(trX, trY, '$' + obj.collected, '#2e7d32');
+    badge(px + CELL - 8, py + 7, '$' + obj.collected, '#2e7d32');
   }
 }
 
@@ -808,7 +861,7 @@ function iconBadge(x, y, icon, bgColor) {
 
 function drawCarried(px, py, carrying) {
   if (!carrying) return;
-  const icons = { ingredient: '🥕', cooked: '🍚', dirty: '🍴', wheat: '🌾', tomato: '🍅', raw_fish: '🐟', raw_chicken: '🐤', chicken: '🍗', wheat_feed: '🌾' };
+  const icons = { ingredient: '🥕', cooked: '🍚', dirty: '🍴', wheat: '🌾', tomato: '🍅', cabbage: '🥬', corn: '🌽', potato: '🥔', raw_fish: '🐟', raw_chicken: '🐤', chicken: '🍗', wheat_feed: '🌾' };
   const recipe = carrying.recipe ? getRecipe(carrying.recipe) : null;
   const icon = (carrying.kind === 'cooked' && recipe) ? recipe.icon : (icons[carrying.kind] || '?');
   iconBadge(px, py - 17 * SCALE, icon, '#2f2a22');
@@ -849,22 +902,14 @@ function drawCustomer(c) {
 
 function drawDoor(obj) {
   const style = OBJECT_STYLE.door;
-  const a = hexToPixel(obj.x, obj.y);
-  const b = hexToPixel(obj.x2, obj.y2);
-  const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-  ctx.globalAlpha = obj.open ? 0.35 : 1;
+  const px = obj.x * CELL, py = obj.y * CELL;
   ctx.fillStyle = style.color;
-  hexPath(a.x, a.y, HEX_SIZE - 3);
+  roundRect(px + 2, py + 2, CELL * 2 - 4, CELL - 4, 5);
   ctx.fill();
-  hexPath(b.x, b.y, HEX_SIZE - 3);
-  ctx.fill();
-  if (!obj.open) {
-    ctx.font = Math.floor(HEX_SIZE * 1.1) + 'px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(style.icon, mx, my);
-  }
-  ctx.globalAlpha = 1;
+  ctx.font = Math.floor(CELL * 0.6) + 'px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(style.icon, px + CELL, py + CELL / 2);
 }
 
 function drawHeldPreview() {
@@ -873,38 +918,47 @@ function drawHeldPreview() {
   const style = OBJECT_STYLE[game.heldObject.type] || { color: '#888', icon: '❔' };
   if (game.heldObject.type === 'door') {
     const valid = game.world.canPlaceDoor(x, y);
-    const second = hexNeighborAt(x, y, 'E');
-    const a = hexToPixel(x, y);
-    const b = hexToPixel(second.x, second.y);
-    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
     ctx.globalAlpha = 0.6;
     ctx.fillStyle = valid ? style.color : '#e05252';
-    hexPath(a.x, a.y, HEX_SIZE - 3);
+    roundRect(x * CELL + 2, y * CELL + 2, CELL * 2 - 4, CELL - 4, 5);
     ctx.fill();
-    hexPath(b.x, b.y, HEX_SIZE - 3);
-    ctx.fill();
-    ctx.font = Math.floor(HEX_SIZE * 1.1) + 'px sans-serif';
+    ctx.font = Math.floor(CELL * 0.6) + 'px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(style.icon, mx, my);
+    ctx.fillText(style.icon, x * CELL + CELL, y * CELL + CELL / 2);
     ctx.globalAlpha = 1;
     return;
   }
-  const valid = game.world.isBuildable(x, y);
-  const { x: cx, y: cy } = hexToPixel(x, y);
+  // flooring can go down on any non-water cell, occupied or not — everything else
+  // still needs a genuinely empty, buildable cell
+  const valid = FLOOR_TILE_TYPES.has(game.heldObject.type)
+    ? game.world.inBounds(x, y) && !game.world.isWater(x, y)
+    : game.world.isBuildable(x, y);
+  const img = getIconImage(game.heldObject.type);
   ctx.globalAlpha = 0.6;
-  ctx.fillStyle = valid ? style.color : '#e05252';
-  hexPath(cx, cy, HEX_SIZE - 3);
-  ctx.fill();
-  ctx.font = Math.floor(HEX_SIZE * 1.1) + 'px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(style.icon, cx, cy);
+  if (img && img.complete && img.naturalWidth > 0) {
+    ctx.drawImage(img, x * CELL, y * CELL, CELL, CELL);
+    if (!valid) {
+      ctx.fillStyle = 'rgba(224,82,82,0.5)';
+      roundRect(x * CELL + 2, y * CELL + 2, CELL - 4, CELL - 4, 5);
+      ctx.fill();
+    }
+  } else {
+    ctx.fillStyle = valid ? style.color : '#e05252';
+    roundRect(x * CELL + 2, y * CELL + 2, CELL - 4, CELL - 4, 5);
+    ctx.fill();
+    ctx.font = Math.floor(CELL * 0.6) + 'px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(style.icon, x * CELL + CELL / 2, y * CELL + CELL / 2);
+  }
   ctx.globalAlpha = 1;
 }
 
 function render() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawGrassBackground();
+  drawFloorTiles();
   drawGrid();
   drawWater();
   for (const obj of game.world.objects) {

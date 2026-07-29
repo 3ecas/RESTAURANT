@@ -1,5 +1,59 @@
 // Recipes, placeable object defs, player, customers, staff
 
+// pixel-art replacements for an object type's emoji icon — drop a file in ASSETS/ and map
+// it here; anywhere still missing from this map just keeps using its emoji as before
+const ICON_IMAGES = {
+  stove: 'ASSETS/STOVE.png',
+  sink: 'ASSETS/SINK.png',
+  table: 'ASSETS/TABLE.png',
+  chair: 'ASSETS/CHAIR.png',
+  fridge: 'ASSETS/FRIDGE.png',
+  orderStand: 'ASSETS/ORDER STAND.png',
+  payingBooth: 'ASSETS/TERMINAL PAYMENT.png',
+  wall: 'ASSETS/WALL BASIC.png',
+  floorTile: 'ASSETS/WOODEN FLOOR.png',
+  floorTileBW: 'ASSETS/BLACK WHITE FLOOR.png',
+};
+
+// every purchasable type that paints onto the floor-tile layer instead of behaving like
+// a normal object (see World.placeFloorTile) — add a new floor type's name here too
+const FLOOR_TILE_TYPES = new Set(['floorTile', 'floorTileBW']);
+
+// generic memoized image loader — shared by icon images and the grass background
+const _imageCache = {};
+function getImage(src) {
+  if (!_imageCache[src]) {
+    const img = new Image();
+    img.src = src;
+    _imageCache[src] = img;
+  }
+  return _imageCache[src];
+}
+
+function getIconImage(type) {
+  const src = ICON_IMAGES[type];
+  return src ? getImage(src) : null;
+}
+
+// the undeveloped ground everywhere a floor tile hasn't been placed — 4 hand-drawn variants
+// picked at random per cell (weighted so the plain one dominates and the decorated ones,
+// which have visible detail, only show up here and there for texture)
+const GRASS_VARIANTS = [
+  { src: 'ASSETS/GRASS.png', weight: 6 },
+  { src: 'ASSETS/GRASS2.png', weight: 1 },
+  { src: 'ASSETS/GRASS3.png', weight: 1 },
+  { src: 'ASSETS/GRASS4.png', weight: 1 },
+];
+function pickGrassVariant() {
+  const total = GRASS_VARIANTS.reduce((sum, v) => sum + v.weight, 0);
+  let r = Math.random() * total;
+  for (const v of GRASS_VARIANTS) {
+    if (r < v.weight) return v.src;
+    r -= v.weight;
+  }
+  return GRASS_VARIANTS[0].src;
+}
+
 const FARM_GROW_TIME = 28000; // 28s for a planted crop to be ready to harvest
 
 // every farmable plot type, mapped to the ingredient it produces — lets farmers/plots/fridges
@@ -7,6 +61,9 @@ const FARM_GROW_TIME = 28000; // 28s for a planted crop to be ready to harvest
 const FARM_CROPS = [
   { type: 'farmPlot', crop: 'wheat', readyIcon: '🌾' },
   { type: 'tomatoFarm', crop: 'tomato', readyIcon: '🍅' },
+  { type: 'cabbageFarm', crop: 'cabbage', readyIcon: '🥬' },
+  { type: 'cornFarm', crop: 'corn', readyIcon: '🌽' },
+  { type: 'potatoFarm', crop: 'potato', readyIcon: '🥔' },
 ];
 
 // chicken raising: fed a few times (not too much — kept modest on purpose) to grow,
@@ -17,35 +74,47 @@ const CHICKEN_EAT_INTERVAL = Math.round(25000 / CHICKEN_FEEDS_TO_GROW); // ~25s 
 const CHICKEN_PROCESS_TIME = 6000; // ms to process a grown chicken at the animal shack
 
 // customers always try the priciest recipe first and work their way down until
-// they find one whose ingredient is available; rice needs none, so it's always the floor.
-// cooking never costs money — customers only ever pay the price
+// they find one whose ingredients are all available; rice needs none, so it's always the
+// floor. cooking never costs money — customers only ever pay the price.
+// `ingredients` is a list of { name, qty } — combo dishes just list more than one
 const RECIPES = [
-  { id: 'roastChicken', name: 'Roast Chicken', icon: '🍗', price: 15, cookTime: 9000, ingredient: 'chicken', enabled: true },
-  { id: 'bread', name: 'Bread', icon: '🍞', price: 8, cookTime: 10000, ingredient: 'wheat', enabled: true },
-  { id: 'shrimp', name: 'Shrimp', icon: '🦐', price: 8, cookTime: 7000, ingredient: 'shrimp', enabled: true },
-  { id: 'rice', name: 'Rice', icon: '🍚', price: 5, cookTime: 8000, ingredient: null, enabled: true },
-  { id: 'tomatoSoup', name: 'Tomato Soup', icon: '🍲', price: 20, cookTime: 35000, ingredient: 'tomato', enabled: true },
+  { id: 'roastChicken', name: 'Roast Chicken', icon: '🍗', price: 15, cookTime: 9000, ingredients: [{ name: 'chicken', qty: 1 }], enabled: true },
+  { id: 'bread', name: 'Bread', icon: '🍞', price: 8, cookTime: 10000, ingredients: [{ name: 'wheat', qty: 1 }], enabled: true },
+  { id: 'shrimp', name: 'Shrimp', icon: '🦐', price: 8, cookTime: 7000, ingredients: [{ name: 'shrimp', qty: 1 }], enabled: true },
+  { id: 'rice', name: 'Rice', icon: '🍚', price: 5, cookTime: 8000, ingredients: [], enabled: true },
+  { id: 'tomatoSoup', name: 'Tomato Soup', icon: '🍲', price: 20, cookTime: 35000, ingredients: [{ name: 'tomato', qty: 1 }], enabled: true },
+  { id: 'salad', name: 'Salad', icon: '🥗', price: 22, cookTime: 18000, ingredients: [{ name: 'cabbage', qty: 1 }], enabled: true },
+  { id: 'grilledCorn', name: 'Grilled Corn', icon: '🌽', price: 24, cookTime: 22000, ingredients: [{ name: 'corn', qty: 1 }], enabled: true },
+  { id: 'bakedPotato', name: 'Baked Potato', icon: '🥔', price: 26, cookTime: 25000, ingredients: [{ name: 'potato', qty: 1 }], enabled: true },
+  // combo dishes — at least two ingredients each, priced well above anything single-ingredient
+  { id: 'surfTurf', name: 'Surf & Turf', icon: '🥩', price: 45, cookTime: 26000, ingredients: [{ name: 'chicken', qty: 1 }, { name: 'shrimp', qty: 1 }], enabled: true },
+  { id: 'farmhouseStew', name: 'Farmhouse Stew', icon: '🥘', price: 42, cookTime: 28000, ingredients: [{ name: 'wheat', qty: 1 }, { name: 'potato', qty: 1 }], enabled: true },
+  { id: 'gardenMedley', name: 'Garden Medley', icon: '🍛', price: 55, cookTime: 32000, ingredients: [{ name: 'tomato', qty: 1 }, { name: 'cabbage', qty: 1 }, { name: 'corn', qty: 1 }], enabled: true },
+  { id: 'seafoodChowder', name: 'Seafood Chowder', icon: '🍜', price: 58, cookTime: 34000, ingredients: [{ name: 'shrimp', qty: 1 }, { name: 'corn', qty: 1 }, { name: 'potato', qty: 1 }], enabled: true },
 ];
 
 function getRecipe(id) { return RECIPES.find(r => r.id === id); }
 
 const ITEM_DEFS = [
-  { type: 'fridge', name: 'Fridge', icon: '🧊', cost: 20 },
-  { type: 'stove', name: 'Stove', icon: '🔥', cost: 30 },
-  { type: 'orderStand', name: 'Order Stand', icon: '🧾', cost: 25 },
-  { type: 'sink', name: 'Sink', icon: '🚰', cost: 20 },
-  { type: 'payingBooth', name: 'Paying Booth', icon: '💳', cost: 25 },
+  { type: 'floorTile', name: 'Wood Floor', icon: '🟫', cost: 3 },
+  { type: 'floorTileBW', name: 'B&W Floor', icon: '⬜', cost: 3 },
+  { type: 'fridge', name: 'Fridge', icon: '🧊', cost: 45 },
+  { type: 'stove', name: 'Stove', icon: '🔥', cost: 65 },
+  { type: 'orderStand', name: 'Order Stand', icon: '🧾', cost: 55 },
+  { type: 'sink', name: 'Sink', icon: '🚰', cost: 40 },
+  { type: 'payingBooth', name: 'Paying Booth', icon: '💳', cost: 55 },
   { type: 'table', name: 'Table', icon: '🍽️', cost: 15 },
   { type: 'chair', name: 'Chair', icon: '🪑', cost: 25 },
-  { type: 'wall', name: 'Wall', icon: '', cost: 5 },
-  { type: 'door', name: 'Door', icon: '🚪', cost: 10 },
-  { type: 'chandelier', name: 'Chandelier', icon: '💡', cost: 40 },
-  { type: 'farmPlot', name: 'Wheat Plot', icon: '🌾', cost: 20 },
-  { type: 'tomatoFarm', name: 'Tomato Farm', icon: '🍅', cost: 35 },
-  { type: 'freezer', name: 'Freezer', icon: '❄️', cost: 25 },
-  { type: 'chicken', name: 'Chicken', icon: '🐤', cost: 20 },
-  { type: 'chickenFeeder', name: 'Chicken Feeder', icon: '🥣', cost: 15 },
-  { type: 'animalShack', name: 'Animal Shack', icon: '🛖', cost: 30 },
+  { type: 'wall', name: 'Counter', icon: '🧱', cost: 5 },
+  { type: 'farmPlot', name: 'Wheat Plot', icon: '🌾', cost: 28 },
+  { type: 'tomatoFarm', name: 'Tomato Farm', icon: '🍅', cost: 38 },
+  { type: 'cabbageFarm', name: 'Cabbage Patch', icon: '🥬', cost: 42 },
+  { type: 'cornFarm', name: 'Corn Field', icon: '🌽', cost: 46 },
+  { type: 'potatoFarm', name: 'Potato Patch', icon: '🥔', cost: 50 },
+  { type: 'freezer', name: 'Freezer', icon: '❄️', cost: 45 },
+  { type: 'chicken', name: 'Chicken', icon: '🐤', cost: 32 },
+  { type: 'chickenFeeder', name: 'Chicken Feeder', icon: '🥣', cost: 28 },
+  { type: 'animalShack', name: 'Animal Shack', icon: '🛖', cost: 55 },
 ];
 
 function getItemDef(type) { return ITEM_DEFS.find(i => i.type === type); }
@@ -65,9 +134,11 @@ function createObject(type) {
     // starts growing the moment it's placed — no separate "plant" step needed
     case 'farmPlot': return Object.assign(base, { planted: true, progress: 0, ready: false, claimed: false });
     case 'tomatoFarm': return Object.assign(base, { planted: true, progress: 0, ready: false, claimed: false });
+    case 'cabbageFarm': return Object.assign(base, { planted: true, progress: 0, ready: false, claimed: false });
+    case 'cornFarm': return Object.assign(base, { planted: true, progress: 0, ready: false, claimed: false });
+    case 'potatoFarm': return Object.assign(base, { planted: true, progress: 0, ready: false, claimed: false });
     case 'chicken': return Object.assign(base, { fed: 0, grown: false, hungerCooldown: 0, claimed: false });
     case 'chickenFeeder': return Object.assign(base, { wheat: 0 });
-    case 'door': return Object.assign(base, { open: false, closeTimer: 0 });
     case 'spawnPoint': return base;
     default: return base;
   }
@@ -76,8 +147,8 @@ function createObject(type) {
 class Mover {
   constructor(x, y) {
     this.gx = x; this.gy = y;
-    const p = hexToPixel(x, y);
-    this.px = p.x; this.py = p.y;
+    this.px = x * CELL + CELL / 2;
+    this.py = y * CELL + CELL / 2;
     this.facing = 'down';
     this.path = [];
     this.speed = 70;
@@ -88,12 +159,12 @@ class Mover {
   stepMove(dt) {
     if (this.path.length === 0) return false;
     const next = this.path[0];
-    const target = hexToPixel(next.x, next.y);
-    const dx = target.x - this.px, dy = target.y - this.py;
+    const tx = next.x * CELL + CELL / 2, ty = next.y * CELL + CELL / 2;
+    const dx = tx - this.px, dy = ty - this.py;
     const dist = Math.hypot(dx, dy);
     const step = this.speed * dt / 1000;
     if (dist <= step || dist === 0) {
-      this.px = target.x; this.py = target.y; this.gx = next.x; this.gy = next.y;
+      this.px = tx; this.py = ty; this.gx = next.x; this.gy = next.y;
       this.path.shift();
     } else {
       this.px += dx / dist * step;
@@ -107,16 +178,16 @@ class Mover {
 
 class Player {
   constructor(x, y) {
-    const p = hexToPixel(x, y);
-    this.px = p.x; this.py = p.y;
+    this.px = x * CELL + CELL / 2;
+    this.py = y * CELL + CELL / 2;
     this.facing = 'down';
     this.carrying = null;
     this.speed = 120;
     this.path = []; // click-to-move path; WASD cancels it, it never overrides WASD
     this.pendingInteractTarget = null; // object to auto-interact with once the path finishes
   }
-  get cellX() { return pixelToHex(this.px, this.py).x; }
-  get cellY() { return pixelToHex(this.px, this.py).y; }
+  get cellX() { return Math.floor(this.px / CELL); }
+  get cellY() { return Math.floor(this.py / CELL); }
   setPath(path) { this.path = path ? path.slice() : []; }
   get hasPath() { return this.path.length > 0; }
   update(dt, world, keys) {
@@ -142,14 +213,14 @@ class Player {
     }
     if (this.path.length > 0) {
       const next = this.path[0];
-      const target = hexToPixel(next.x, next.y);
-      const dx = target.x - this.px, dy = target.y - this.py;
+      const tx = next.x * CELL + CELL / 2, ty = next.y * CELL + CELL / 2;
+      const dx = tx - this.px, dy = ty - this.py;
       const dist = Math.hypot(dx, dy);
       const step = this.speed * dt / 1000;
       if (Math.abs(dx) > Math.abs(dy)) this.facing = dx > 0 ? 'right' : 'left';
       else if (dy !== 0) this.facing = dy > 0 ? 'down' : 'up';
       if (dist <= step || dist === 0) {
-        this.px = target.x; this.py = target.y;
+        this.px = tx; this.py = ty;
         this.path.shift();
       } else {
         this.px += dx / dist * step;
@@ -160,8 +231,8 @@ class Player {
   _free(world, cx, cy, hw, hh) {
     const pts = [[cx - hw, cy - hh], [cx + hw, cy - hh], [cx - hw, cy + hh], [cx + hw, cy + hh]];
     for (const [px, py] of pts) {
-      const cell = pixelToHex(px, py);
-      if (!world.isWalkable(cell.x, cell.y)) return false;
+      const gx = Math.floor(px / CELL), gy = Math.floor(py / CELL);
+      if (!world.isWalkable(gx, gy)) return false;
     }
     return true;
   }
@@ -183,7 +254,6 @@ class Customer extends Mover {
     this.claimed = false;
     this.deliveryClaimed = false; // reserved by a waiter who's bringing this exact order
     this.payBooth = null;
-    this.nearChandelier = false; // set once when served — eats faster and pays a bonus
     this.speed = 40;
   }
 
@@ -244,8 +314,7 @@ class Customer extends Mover {
       case 'walkingToPay':
         if (!this.hasPath) {
           const recipe = getRecipe(this.order);
-          const bonus = this.nearChandelier ? 1 + CHANDELIER_MONEY_BONUS : 1;
-          this.payBooth.collected += recipe.price * bonus;
+          this.payBooth.collected += recipe.price;
           this.state = 'leaving';
           const ec = world.nearestEntranceCell(this.gx, this.gy);
           const path = world.pathTo(this.gx, this.gy, ec.x, ec.y);
@@ -421,8 +490,7 @@ class StaffMember extends Mover {
           customer.deliveryClaimed = false;
           if (customer.state === 'waitingFood' && customer.order === item.recipe) {
             customer.state = 'eating';
-            customer.nearChandelier = world.isNearChandelier(customer.chair.x, customer.chair.y);
-            customer.timer = customer.nearChandelier ? EAT_TIME / CHANDELIER_EAT_SPEEDUP : EAT_TIME;
+            customer.timer = EAT_TIME;
           }
         }
         this._advanceWaiterDelivery(world);

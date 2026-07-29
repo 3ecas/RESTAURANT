@@ -234,7 +234,12 @@ canvas {
 .paletteItem:hover { border-color: #ffd76b; }
 .paletteItem.disabled { opacity: 0.4; cursor: not-allowed; }
 .paletteItem .icon { font-size: 18px; display: block; margin-bottom: 2px; }
+.pixelIcon { image-rendering: pixelated; image-rendering: crisp-edges; }
+.paletteItem .pixelIcon { width: 24px; height: 24px; display: block; margin: 0 auto 2px; }
+.hotbarSlot .pixelIcon { width: 32px; height: 32px; }
 .paletteItem .cost { color: #ffd76b; font-size: 10px; }
+.paletteItem .stock { font-size: 9px; color: #9ec9a3; margin-top: 2px; }
+.paletteItem .stock.outOfStock { color: #e05252; }
 
 button {
   background: #4a3d28;

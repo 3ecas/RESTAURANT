@@ -96,12 +96,26 @@ function renderOrdersPanel(game) {
   });
 }
 
+// an object type with a pixel-art replacement (ICON_IMAGES, entities.js) renders as an
+// <img>; everything else keeps using its emoji, unchanged
+function iconHtml(type, iconChar, className) {
+  const src = ICON_IMAGES[type];
+  return src
+    ? `<img class="pixelIcon" src="${src}" alt="">`
+    : `<span class="${className}">${iconChar}</span>`;
+}
+
 function buildPaletteItem(game, def) {
+  const stock = game.shopStock[def.type] || 0;
   const affordable = game.money >= def.cost;
+  const canBuy = affordable && stock > 0;
   const div = document.createElement('div');
-  div.className = 'paletteItem' + (affordable ? '' : ' disabled');
-  div.innerHTML = `<span class="icon">${def.icon}</span>${def.name}<div class="cost">$${def.cost}</div>`;
-  div.addEventListener('click', () => game.buyItem(def.type));
+  div.className = 'paletteItem' + (canBuy ? '' : ' disabled');
+  const stockLabel = stock > 0
+    ? `<div class="stock">x${stock} in stock</div>`
+    : `<div class="stock outOfStock">Out of stock</div>`;
+  div.innerHTML = `${iconHtml(def.type, def.icon, 'icon')}${def.name}<div class="cost">$${def.cost}</div>${stockLabel}`;
+  if (canBuy) div.addEventListener('click', () => game.buyItem(def.type));
   return div;
 }
 
@@ -131,7 +145,7 @@ function renderPalette(game) {
   if (leftover.length > 0) el.appendChild(buildPaletteCategory(game, 'Other', leftover));
 }
 
-const INGREDIENT_ICON = { wheat: '🌾', shrimp: '🦐', chicken: '🍗', tomato: '🍅' };
+const INGREDIENT_ICON = { wheat: '🌾', shrimp: '🦐', chicken: '🍗', tomato: '🍅', cabbage: '🥬', corn: '🌽', potato: '🥔' };
 
 // always-visible fridge stock, shown in the corner box below the money box —
 // only ingredients you actually have any of are listed
@@ -156,7 +170,9 @@ function renderRecipeTable(game) {
   const tbody = document.querySelector('#recipeTable tbody');
   tbody.innerHTML = '';
   RECIPES.forEach(r => {
-    const needs = r.ingredient ? `${INGREDIENT_ICON[r.ingredient] || ''} ${r.ingredient}` : '—';
+    const needs = r.ingredients.length > 0
+      ? r.ingredients.map(ing => `${INGREDIENT_ICON[ing.name] || ''} ${ing.name}${ing.qty > 1 ? ' x' + ing.qty : ''}`).join(', ')
+      : '—';
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${r.icon}</td><td>${r.name}</td><td>${needs}</td><td>$${r.price}</td><td>${(r.cookTime / 1000).toFixed(1)}s</td>
       <td><input type="checkbox" ${r.enabled ? 'checked' : ''} data-id="${r.id}" class="recipeToggle"></td>`;
@@ -264,13 +280,14 @@ const HOTBAR_SIZE = 9;
 
 // groups every item type it doesn't otherwise recognize into a generic bucket
 const ITEM_CATEGORY = {
+  floorTile: 'Flooring', floorTileBW: 'Flooring',
   fridge: 'Appliances', stove: 'Appliances', orderStand: 'Appliances', sink: 'Appliances', payingBooth: 'Appliances',
   table: 'Furniture', chair: 'Furniture', wall: 'Furniture',
-  farmPlot: 'Farming', tomatoFarm: 'Farming',
+  farmPlot: 'Farming', tomatoFarm: 'Farming', cabbageFarm: 'Farming', cornFarm: 'Farming', potatoFarm: 'Farming',
   chicken: 'Ranching', chickenFeeder: 'Ranching', animalShack: 'Ranching',
   freezer: 'Fishing',
 };
-const CATEGORY_ORDER = ['Appliances', 'Furniture', 'Farming', 'Ranching', 'Fishing'];
+const CATEGORY_ORDER = ['Flooring', 'Appliances', 'Furniture', 'Farming', 'Ranching', 'Fishing'];
 
 function inventoryCounts(game) {
   const counts = {};
@@ -290,7 +307,7 @@ function buildHotbarSlot(game, type, count) {
   if (isHeld) slot.classList.add('active');
   else if (game.heldObject) slot.classList.add('disabled');
   slot.title = def ? def.name : type;
-  slot.innerHTML = `<span class="hotbarIcon">${def ? def.icon : '❔'}</span>${count > 1 ? `<span class="hotbarCount">${count}</span>` : ''}`;
+  slot.innerHTML = `${iconHtml(type, def ? def.icon : '❔', 'hotbarIcon')}${count > 1 ? `<span class="hotbarCount">${count}</span>` : ''}`;
   slot.addEventListener('click', () => game.beginPlacingType(type));
   return slot;
 }
@@ -387,13 +404,15 @@ function showContextMenu(game, obj, clientX, clientY) {
   const storeBtn = document.getElementById('ctxStore');
   const sellBtn = document.getElementById('ctxSell');
 
+  const canMove = game.canMoveObject(obj);
   const canRemove = game.canRemoveObject(obj);
-  moveBtn.disabled = !canRemove;
+  moveBtn.disabled = !canMove;
   storeBtn.disabled = !canRemove;
   sellBtn.disabled = !canRemove;
-  moveBtn.title = canRemove ? '' : 'In use — cannot move right now';
-  storeBtn.title = moveBtn.title;
-  sellBtn.title = moveBtn.title;
+  moveBtn.title = canMove ? '' : 'In use — cannot move right now';
+  const removeTitle = canRemove ? '' : 'In use — cannot store/sell right now';
+  storeBtn.title = removeTitle;
+  sellBtn.title = removeTitle;
 
   const def = getItemDef(obj.type);
   sellBtn.style.display = def ? '' : 'none';
