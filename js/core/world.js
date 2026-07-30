@@ -1,24 +1,10 @@
 // Grid, world map, pathfinding — one open field, buildable everywhere
 
-const COLS = 21;
-const ROWS = 21;
-const CELL = 40;
-const SCALE = CELL / 32; // grows the fixed-pixel visuals (characters, badges, text) along with the cell size
+import { COLS, ROWS, DIRS } from './constants.js';
+import { makeGrassVariantGrid } from './assets.js';
+import { getObjectType, WALKTHROUGH_TYPES, SEATING_SURFACE_TYPES } from '../objects/registry.js';
 
-// object types that never block movement — anyone can walk straight over them
-const WALKTHROUGH_TYPES = new Set(['door', 'chair', 'farmPlot', 'tomatoFarm', 'cabbageFarm', 'cornFarm', 'potatoFarm']);
-
-const DIRS = [
-  { x: 0, y: -1, name: 'up' },
-  { x: 0, y: 1, name: 'down' },
-  { x: -1, y: 0, name: 'left' },
-  { x: 1, y: 0, name: 'right' },
-];
-
-// anything a chair can pair up with to seat a customer — a table, or a counter (bar seating)
-const SEATING_SURFACE_TYPES = new Set(['table', 'wall']);
-
-class World {
+export class World {
   constructor() {
     this.grid = [];
     for (let y = 0; y < ROWS; y++) {
@@ -31,12 +17,7 @@ class World {
     this.water = new Set(); // "x,y" keys — irregular pond terrain, never walkable/buildable
     this.floorTiles = new Map(); // "x,y" -> floor tile type — placed flooring, a separate layer under objects
     // fixed per-cell grass look, picked once so it doesn't flicker between frames
-    this.grassVariant = [];
-    for (let y = 0; y < ROWS; y++) {
-      const row = [];
-      for (let x = 0; x < COLS; x++) row.push(pickGrassVariant());
-      this.grassVariant.push(row);
-    }
+    this.grassVariant = makeGrassVariantGrid();
   }
 
   isWater(x, y) {
@@ -97,7 +78,8 @@ class World {
   get entranceCells() {
     const door = this.door;
     if (!door) return [];
-    return [{ x: door.x, y: door.y }, { x: door.x + 1, y: door.y }];
+    const t = getObjectType(door.type);
+    return t && t.entranceCells ? t.entranceCells(door) : [{ x: door.x, y: door.y }];
   }
 
   isReservedCell(x, y) {
@@ -126,23 +108,17 @@ class World {
     return this.isWalkable(x, y) && !this.isReservedCell(x, y) && this.grid[y][x] === null;
   }
 
-  // door-specific: needs both of its cells free
-  canPlaceDoor(x, y) {
-    return this.isBuildable(x, y) && this.isBuildable(x + 1, y);
+  // whether `type` can be placed at (x,y) — most types just need an empty buildable cell,
+  // but a type can override this (see objects/door.js, which needs 2 cells)
+  canPlace(type, x, y) {
+    const t = getObjectType(type);
+    if (t && t.canPlace) return t.canPlace(this, x, y);
+    return this.isBuildable(x, y);
   }
 
   place(obj, x, y) {
-    if (obj.type === 'door') {
-      const x2 = x + 1;
-      if (!this.inBounds(x, y) || !this.inBounds(x2, y)) return false;
-      if (this.grid[y][x] !== null || this.grid[y][x2] !== null) return false;
-      obj.x = x;
-      obj.y = y;
-      this.grid[y][x] = obj;
-      this.grid[y][x2] = obj;
-      this.objects.push(obj);
-      return true;
-    }
+    const t = getObjectType(obj.type);
+    if (t && t.place) return t.place(this, obj, x, y);
     if (!this.inBounds(x, y) || this.grid[y][x] !== null) return false;
     obj.x = x;
     obj.y = y;
@@ -154,9 +130,9 @@ class World {
   removeAt(x, y) {
     const obj = this.cellAt(x, y);
     if (!obj) return null;
-    if (obj.type === 'door') {
-      this.grid[obj.y][obj.x] = null;
-      this.grid[obj.y][obj.x + 1] = null;
+    const t = getObjectType(obj.type);
+    if (t && t.removeCells) {
+      t.removeCells(this, obj);
     } else {
       this.grid[y][x] = null;
     }
@@ -169,7 +145,9 @@ class World {
   }
 
   // whichever object of this type is physically closest to (fromX, fromY) — lets staff
-  // always use the nearest fridge/appliance to them instead of always the first one placed
+  // always use the nearest fridge/appliance to them instead of always the first one placed.
+  // NOTE: distance-only — see nearestReachableObject() for wayfinding, where a closer-but-
+  // boxed-in object must not be preferred over a farther, actually-reachable one.
   nearestObject(type, fromX, fromY) {
     const candidates = this.findObjects(type);
     if (candidates.length === 0) return null;
@@ -179,6 +157,22 @@ class World {
       if (d < bestDist) { bestDist = d; best = c; }
     }
     return best;
+  }
+
+  // like nearestObject, but skips any candidate with no walkable path to a cell adjacent to
+  // it. Fixes a real stuck-forever bug: if the geometrically-nearest fridge (say) ends up
+  // boxed in by walls/furniture/water, nearestObject would keep returning that same
+  // unreachable one forever, permanently blocking a farther, perfectly reachable fridge from
+  // ever being tried. Staff wayfinding (chef fetching ingredients, farmer/rancher dropping
+  // off cargo) should always use this instead of nearestObject.
+  nearestReachableObject(type, fromX, fromY) {
+    const candidates = this.findObjects(type)
+      .map(o => ({ o, d: Math.abs(o.x - fromX) + Math.abs(o.y - fromY) }))
+      .sort((a, b) => a.d - b.d);
+    for (const { o } of candidates) {
+      if (this.pathToAdjacent(fromX, fromY, o.x, o.y)) return o;
+    }
+    return null;
   }
 
   randomEntranceCell() {
