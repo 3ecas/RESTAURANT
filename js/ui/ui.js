@@ -7,6 +7,7 @@ import { renderOrdersPanel } from './ordersUI.js';
 import { renderIngredientsBox } from './ingredientsUI.js';
 import { renderRecipeTable } from './recipeUI.js';
 import { updateMoneyUI, updateOpenStatusUI } from './statusUI.js';
+import { renderAchievements } from './achievementsUI.js';
 
 export function initUI(game) {
   document.querySelectorAll('.tabBtn').forEach(btn => {
@@ -45,6 +46,7 @@ export function initUI(game) {
   refreshStorageUI(game);
   renderOrdersPanel(game);
   renderIngredientsBox(game);
+  renderAchievements(game);
   updateMoneyUI(game);
   updateOpenStatusUI(game);
 }

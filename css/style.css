@@ -347,6 +347,34 @@ th { color: #ffd76b; }
 .orderPending { background: rgba(140, 140, 140, 0.22); border: 1px solid #6b6156; color: #cfc6b8; }
 .orderEmpty { color: #a99c86; font-size: 12px; padding: 6px; }
 
+/* achievements tab — sequential milestones, not experience */
+.achievementRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+.achievementDone { background: rgba(76, 175, 80, 0.18); border: 1px solid #4caf50; }
+.achievementActive { background: rgba(255, 215, 107, 0.15); border: 1px solid #ffd76b; }
+.achievementLocked { background: rgba(140, 140, 140, 0.12); border: 1px solid #4a4136; opacity: 0.6; }
+.achievementIcon { font-size: 20px; line-height: 1; }
+.achievementBody { flex: 1; }
+.achievementName { font-weight: bold; color: #f1e9dc; font-size: 13px; }
+.achievementDesc { font-size: 12px; color: #cfc6b8; margin-top: 2px; }
+.achievementReward { font-size: 11px; color: #ffd76b; margin-top: 4px; }
+.achievementProgressBar {
+  height: 8px;
+  background: #2a2a2a;
+  border-radius: 4px;
+  margin-top: 6px;
+  overflow: hidden;
+}
+.achievementProgressFill { height: 100%; background: #ffd76b; }
+.achievementProgressText { font-size: 11px; color: #cfc6b8; margin-top: 3px; }
+.achievementEmpty { color: #a99c86; font-size: 12px; padding: 6px; }
+
 /* storage quick bar — fixed 9 slots, bottom center */
 #hotbar {
   position: fixed;

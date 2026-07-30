@@ -1,6 +1,10 @@
 // Always-visible fridge stock box (below the money box)
 
-export const INGREDIENT_ICON = { wheat: '🌾', shrimp: '🦐', chicken: '🍗', tomato: '🍅', cabbage: '🥬', corn: '🌽', potato: '🥔' };
+export const INGREDIENT_ICON = {
+  wheat: '🌾', shrimp: '🦐', chicken: '🍗', tomato: '🍅', cabbage: '🥬', corn: '🌽', potato: '🥔',
+  carrot: '🥕', onion: '🧅', pumpkin: '🎃', salmon: '🐟', milk: '🥛',
+  cod: '🐟', tuna: '🐟', egg: '🥚', beef: '🥩',
+};
 
 // only ingredients you actually have any of are listed
 export function renderIngredientsBox(game) {

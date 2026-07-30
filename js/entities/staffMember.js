@@ -1,7 +1,7 @@
 // Hired staff: shared leveling/carrying mechanics; per-role behavior lives in ./staffRoles/*
 
 import { Mover } from './mover.js';
-import { NAMES, STAFF_BASE_SPEED, STAFF_MAX_LEVEL, SPEED_MULT_BY_LEVEL, CAPACITY_BY_LEVEL, WORK_MULT_BY_LEVEL } from '../data/staffConfig.js';
+import { NAMES, STAFF_BASE_SPEED, STAFF_MAX_LEVEL, speedMultiplier, workMultiplier, carryCapacity as carryCapacityFor } from '../data/staffConfig.js';
 import { updateWaiter } from './staffRoles/waiter.js';
 import { updateChef } from './staffRoles/chef.js';
 import { updateCleaner } from './staffRoles/cleaner.js';
@@ -27,23 +27,15 @@ export class StaffMember extends Mover {
   }
 
   applyLevelStats() {
-    const lvl = Math.min(this.level, STAFF_MAX_LEVEL);
-    const speedTable = SPEED_MULT_BY_LEVEL[this.role];
-    this.speed = STAFF_BASE_SPEED * (speedTable ? speedTable[lvl - 1] : 1);
+    this.speed = STAFF_BASE_SPEED * speedMultiplier(this.role, this.level);
     // chef: stove cook speed. rancher: shack process speed. fisherman: catch speed. baked
     // into whatever they're working on at the moment it starts, not read continuously —
     // see chef.js/rancher.js/fisherman.js
-    const workTable = WORK_MULT_BY_LEVEL[this.role];
-    this.workMultiplier = workTable ? workTable[lvl - 1] : 1;
+    this.workMultiplier = workMultiplier(this.role, this.level);
   }
 
-  // how many items they carry in one trip before heading back. Farmer's table-driven cap
-  // still delivers early (see farmer.js) whenever there's nothing left to harvest or plant,
-  // so a farmer with only 1-2 plots delivers promptly instead of hoarding for a batch.
   carryCapacity() {
-    const lvl = Math.min(this.level, STAFF_MAX_LEVEL);
-    const capTable = CAPACITY_BY_LEVEL[this.role];
-    return capTable ? capTable[lvl - 1] : 1;
+    return carryCapacityFor(this.role, this.level);
   }
 
   updateCarryVisual() {

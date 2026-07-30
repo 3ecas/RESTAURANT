@@ -122,36 +122,11 @@ function drawCustomer(ctx, c) {
   }
 }
 
-function drawDoor(ctx, obj) {
-  const t = getObjectType('door');
-  const px = obj.x * CELL, py = obj.y * CELL;
-  ctx.fillStyle = t.color;
-  roundRect(ctx, px + 2, py + 2, CELL * 2 - 4, CELL - 4, 5);
-  ctx.fill();
-  ctx.font = Math.floor(CELL * 0.6) + 'px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(t.icon, px + CELL, py + CELL / 2);
-}
-
 function drawHeldPreview(ctx, game) {
   if (!game.heldObject || !game.hoverCell) return;
   const { x, y } = game.hoverCell;
   const type = game.heldObject.type;
   const t = getObjectType(type) || { color: '#888', icon: '❔' };
-  if (type === 'door') {
-    const valid = game.world.canPlace(type, x, y);
-    ctx.globalAlpha = 0.6;
-    ctx.fillStyle = valid ? t.color : '#e05252';
-    roundRect(ctx, x * CELL + 2, y * CELL + 2, CELL * 2 - 4, CELL - 4, 5);
-    ctx.fill();
-    ctx.font = Math.floor(CELL * 0.6) + 'px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(t.icon, x * CELL + CELL, y * CELL + CELL / 2);
-    ctx.globalAlpha = 1;
-    return;
-  }
   // flooring can go down on any non-water cell, occupied or not — everything else
   // still needs a genuinely empty, buildable cell
   const valid = FLOOR_TILE_TYPES.has(type)
@@ -184,9 +159,7 @@ export function render(ctx, canvas, game) {
   drawFloorTiles(ctx, game.world);
   drawGrid(ctx);
   drawWater(ctx, game.world);
-  for (const obj of game.world.objects) {
-    if (obj.type === 'door') drawDoor(ctx, obj); else drawObject(ctx, obj);
-  }
+  for (const obj of game.world.objects) drawObject(ctx, obj);
 
   const drawables = [
     { py: game.player.py, draw: () => drawCharacter(ctx, game.player.px, game.player.py, PLAYER_COLOR, PLAYER_OUTLINE, game.player.carrying) },

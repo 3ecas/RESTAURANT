@@ -32,14 +32,21 @@ function buildPaletteCategory(game, label, defs) {
   return section;
 }
 
+// an item can opt into requiring an unlock (e.g. Stove II/III via an achievement reward,
+// see objects/stoveII.js) — until then it simply doesn't show up here at all
+function isVisible(game, def) {
+  return !def.requiresUnlock || game.unlockedStoveTiers.has(def.type);
+}
+
 // grouped exactly like the storage quick bar's expanded view — same categories, same order
 export function renderPalette(game) {
   const el = document.getElementById('palette');
   el.innerHTML = '';
+  const visible = ITEM_DEFS.filter(d => isVisible(game, d));
   CATEGORY_ORDER.forEach(cat => {
-    const defs = ITEM_DEFS.filter(d => (d.category || 'Other') === cat);
+    const defs = visible.filter(d => (d.category || 'Other') === cat);
     if (defs.length > 0) el.appendChild(buildPaletteCategory(game, cat, defs));
   });
-  const leftover = ITEM_DEFS.filter(d => !d.category);
+  const leftover = visible.filter(d => !d.category);
   if (leftover.length > 0) el.appendChild(buildPaletteCategory(game, 'Other', leftover));
 }

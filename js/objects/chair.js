@@ -11,6 +11,7 @@ export const chair = {
   category: 'Furniture',
   image: 'ASSETS/CHAIR.png',
   walkthrough: true,
+  isChair: true,
 
   createState(base) {
     return Object.assign(base, { occupied: null });

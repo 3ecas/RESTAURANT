@@ -1,12 +1,12 @@
 // Recipes tab: enable/disable which dishes customers can order
 
-import { RECIPES, getRecipe } from '../data/recipes.js';
+import { RECIPES, getRecipe, isRecipeUnlocked } from '../data/recipes.js';
 import { INGREDIENT_ICON } from './ingredientsUI.js';
 
 export function renderRecipeTable(game) {
   const tbody = document.querySelector('#recipeTable tbody');
   tbody.innerHTML = '';
-  RECIPES.forEach(r => {
+  RECIPES.filter(r => isRecipeUnlocked(game, r)).forEach(r => {
     const needs = r.ingredients.length > 0
       ? r.ingredients.map(ing => `${INGREDIENT_ICON[ing.name] || ''} ${ing.name}${ing.qty > 1 ? ' x' + ing.qty : ''}`).join(', ')
       : '—';

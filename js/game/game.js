@@ -3,12 +3,12 @@
 
 import { COLS, ROWS, DIRS } from '../core/constants.js';
 import { World } from '../core/world.js';
-import { getObjectType, createObject, ITEM_DEFS, FARM_CROP_TYPES } from '../objects/registry.js';
+import { getObjectType, createObject, ITEM_DEFS, FARM_CROP_TYPES, ANIMAL_TYPES, STOVE_TYPES } from '../objects/registry.js';
 import { tickFarmGrowth } from '../objects/shared/farmCropFactory.js';
-import { tickCooking } from '../objects/stove.js';
-import { tickChickenHunger } from '../objects/chicken.js';
-import { getRecipe } from '../data/recipes.js';
-import { MAX_WAITING, SHOP_REFRESH_INTERVAL, EAT_TIME } from '../data/balance.js';
+import { tickCooking } from '../objects/shared/stoveFactory.js';
+import { tickAnimalHunger } from '../objects/shared/ranchAnimalFactory.js';
+import { getRecipe, isRecipeUnlocked } from '../data/recipes.js';
+import { MAX_WAITING, SHOP_REFRESH_INTERVAL, EAT_TIME, SPAWN_CYCLE_MS, SPAWN_MIN_PER_CYCLE, SPAWN_MAX_PER_CYCLE } from '../data/balance.js';
 import { Player } from '../entities/player.js';
 import { Customer } from '../entities/customer.js';
 import { StaffMember } from '../entities/staffMember.js';
@@ -18,14 +18,17 @@ import { refreshStorageUI } from '../ui/hotbarUI.js';
 import { renderStaffTable, renderStaffPanels } from '../ui/staffUI.js';
 import { renderOrdersPanel } from '../ui/ordersUI.js';
 import { renderIngredientsBox } from '../ui/ingredientsUI.js';
+import { renderRecipeTable } from '../ui/recipeUI.js';
 import { updateMoneyUI } from '../ui/statusUI.js';
 import { hideContextMenu } from '../ui/contextMenuUI.js';
 import { STAFF_MAX_LEVEL } from '../data/staffConfig.js';
+import { checkAchievements } from './achievements.js';
+import { renderAchievements } from '../ui/achievementsUI.js';
 
 export class Game {
   constructor() {
     this.world = new World();
-    this.money = 1000;
+    this.money = 50;
     this.staff = [];
     this.inventory = []; // bought/stored objects not currently on the grid
     this.heldObject = null; // the single object currently in-hand, ready to place
@@ -34,14 +37,27 @@ export class Game {
     this.hoverCell = null;
     this.menuOpen = false;
     this.keys = new Set();
-    this.spawnTimer = 3000;
+    this.startSpawnCycle(); // first batch of arrivals for this minute
     this.isOpen = true;
     this.staffUIRefresh = 0; // throttles the staff table redraw while training counts down
     this.wasTraining = false;
     this.ordersUIRefresh = 0; // throttles the orders panel redraw
-    this.ingredients = { wheat: 0, shrimp: 0, chicken: 0, tomato: 0, cabbage: 0, corn: 0, potato: 0 }; // ingredient stock, consumed by recipes that need them — starts empty, so only rice (which needs nothing) is ever ordered until you have some
+    this.ingredients = {
+      wheat: 0, shrimp: 0, chicken: 0, tomato: 0, cabbage: 0, corn: 0, potato: 0,
+      carrot: 0, onion: 0, pumpkin: 0, salmon: 0, milk: 0,
+      cod: 0, tuna: 0, egg: 0, beef: 0,
+    }; // ingredient stock, consumed by recipes that need them — starts empty, so only rice (which needs nothing) is ever ordered until you have some
     this.shopStock = {}; // how many of each shop item are currently available to buy
     this.shopRefreshTimer = SHOP_REFRESH_INTERVAL;
+
+    // achievements: sequential deadlines, not experience — see data/achievements.js. Must be
+    // set up before refreshShopStock() below, since renderPalette() reads unlockedStoveTiers.
+    this.stats = { customersServed: 0, totalRevenue: 0 };
+    this.achievementIndex = 0;
+    this.completedAchievementIds = [];
+    this.unlockedRecipes = new Set(); // recipe ids unlocked via achievement rewards
+    this.unlockedStoveTiers = new Set(['stove']); // stove types purchasable in the shop
+
     this.refreshShopStock();
 
     this.setupLevel();
@@ -49,10 +65,12 @@ export class Game {
   }
 
   // recipes with no ingredients need nothing else; rice is always cookable — the floor
-  // everyone falls back to. cooking never costs money.
+  // everyone falls back to. cooking never costs money. locked-and-not-yet-unlocked recipes
+  // (see data/achievements.js) are never cookable regardless of ingredients on hand.
   canCookRecipe(recipeId) {
     const recipe = getRecipe(recipeId);
     if (!recipe) return false;
+    if (!isRecipeUnlocked(this, recipe)) return false;
     return recipe.ingredients.every(ing => (this.ingredients[ing.name] || 0) >= ing.qty);
   }
 
@@ -85,7 +103,7 @@ export class Game {
 
   setupLevel() {
     const w = this.world;
-    w.place(createObject('door'), 9, 13);
+    w.place(createObject('door'), 9, 14);
     w.place(createObject('spawnPoint'), 7, 7);
     w.generateWater(15);
 
@@ -96,9 +114,9 @@ export class Game {
     w.place(createObject('orderStand'), 12, 7);
     w.place(createObject('sink'), 14, 7);
     w.place(createObject('payingBooth'), 11, 13);
-    w.place(createObject('table'), 9, 10);
-    w.place(createObject('chair'), 9, 9);
-    w.place(createObject('chair'), 9, 11);
+    w.place(createObject('table'), 9, 11);
+    w.place(createObject('chair'), 8, 11);
+    w.place(createObject('chair'), 10, 11);
   }
 
   addMoney(amount) {
@@ -123,6 +141,7 @@ export class Game {
   buyItem(type) {
     const def = getObjectType(type);
     if (!def || def.cost == null || this.money < def.cost) return;
+    if (def.requiresUnlock && !this.unlockedStoveTiers.has(type)) return;
     if ((this.shopStock[type] || 0) <= 0) return;
     this.shopStock[type]--;
     this.addMoney(-def.cost); // also re-renders the palette, reflecting the new stock count
@@ -220,7 +239,9 @@ export class Game {
 
   fireStaff(id) {
     const s = this.staff.find(s => s.id === id);
-    if (s && s.task && s.task.stove) s.task.stove.reservedBy = null;
+    if (s && s.task && s.task.stove && s.task.slotIndex != null) {
+      s.task.stove.slots[s.task.slotIndex].reservedBy = null;
+    }
     this.staff = this.staff.filter(s => s.id !== id);
     renderStaffTable(this);
     renderStaffPanels(this);
@@ -255,24 +276,25 @@ export class Game {
 
   // ---- customer spawning ----
 
-  trySpawnGroup() {
+  // picks a fresh arrival count (6-16) for the next minute and paces individual arrivals
+  // evenly across it — called once at game start and again every time the cycle runs out
+  startSpawnCycle() {
+    this.spawnCycleMsLeft = SPAWN_CYCLE_MS;
+    this.spawnRemaining = SPAWN_MIN_PER_CYCLE + Math.floor(Math.random() * (SPAWN_MAX_PER_CYCLE - SPAWN_MIN_PER_CYCLE + 1));
+    this.nextArrivalTimer = this.spawnCycleMsLeft / this.spawnRemaining;
+  }
+
+  trySpawnOne() {
     if (!this.isOpen) return;
     if (!this.world.door) return; // door is mid-move, nowhere for customers to appear
-    const groupSize = 1 + Math.floor(Math.random() * 6);
-    let freeSeats = this.world.chairsForTables().filter(ct => !ct.chair.occupied && !ct.table.dirty);
-    let waitingCount = this.world.customers.filter(c => c.state === 'waitingAtDoor').length;
-    for (let i = 0; i < groupSize; i++) {
-      if (freeSeats.length > 0) {
-        const idx = Math.floor(Math.random() * freeSeats.length);
-        const seat = freeSeats.splice(idx, 1)[0];
-        this.spawnSeatedCustomer(seat);
-      } else if (waitingCount < MAX_WAITING) {
-        this.spawnWaitingCustomer();
-        waitingCount++;
-      } else {
-        break;
-      }
+    const freeSeats = this.world.chairsForTables().filter(ct => !ct.chair.occupied && !ct.table.dirty);
+    if (freeSeats.length > 0) {
+      const seat = freeSeats[Math.floor(Math.random() * freeSeats.length)];
+      this.spawnSeatedCustomer(seat);
+      return;
     }
+    const waitingCount = this.world.customers.filter(c => c.state === 'waitingAtDoor').length;
+    if (waitingCount < MAX_WAITING) this.spawnWaitingCustomer();
   }
 
   spawnSeatedCustomer(seat) {
@@ -383,13 +405,17 @@ export class Game {
       this.player.pendingInteractTarget = null;
     }
 
-    for (const stove of this.world.findObjects('stove')) tickCooking(stove, dt);
+    for (const t of STOVE_TYPES) {
+      for (const stove of this.world.findObjects(t.type)) tickCooking(stove, dt);
+    }
 
     for (const t of FARM_CROP_TYPES) {
       for (const plot of this.world.findObjects(t.type)) tickFarmGrowth(plot, dt);
     }
 
-    for (const chicken of this.world.findObjects('chicken')) tickChickenHunger(chicken, dt, this.world);
+    for (const t of ANIMAL_TYPES) {
+      for (const animal of this.world.findObjects(t.type)) tickAnimalHunger(animal, t, dt, this.world);
+    }
 
     for (const s of this.staff) s.update(dt, this.world, this);
 
@@ -418,16 +444,32 @@ export class Game {
 
     this.promoteWaitingCustomers();
 
-    this.spawnTimer -= dt;
-    if (this.spawnTimer <= 0) {
-      this.trySpawnGroup();
-      this.spawnTimer = 6000 + Math.random() * 6000;
+    // arrivals are paced evenly across the current 1-minute cycle rather than trickling in
+    // continuously — a fresh, independently-random count (6-16) starts the moment the
+    // minute is up, regardless of whether the previous cycle finished spawning everyone
+    this.spawnCycleMsLeft -= dt;
+    this.nextArrivalTimer -= dt;
+    if (this.nextArrivalTimer <= 0 && this.spawnRemaining > 0) {
+      this.trySpawnOne();
+      this.spawnRemaining--;
+      if (this.spawnRemaining > 0) {
+        this.nextArrivalTimer = Math.max(0, this.spawnCycleMsLeft) / this.spawnRemaining;
+      }
     }
+    if (this.spawnCycleMsLeft <= 0) this.startSpawnCycle();
 
     this.shopRefreshTimer -= dt;
     if (this.shopRefreshTimer <= 0) {
       this.shopRefreshTimer = SHOP_REFRESH_INTERVAL;
       this.refreshShopStock();
+    }
+
+    // a reward can unlock a shop item (stove tier) or a recipe, so both those panels need
+    // a fresh render the moment a milestone lands — not just whenever they'd redraw anyway
+    if (checkAchievements(this)) {
+      renderAchievements(this);
+      renderPalette(this);
+      renderRecipeTable(this);
     }
   }
 }

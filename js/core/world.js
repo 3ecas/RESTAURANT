@@ -2,7 +2,7 @@
 
 import { COLS, ROWS, DIRS } from './constants.js';
 import { makeGrassVariantGrid } from './assets.js';
-import { getObjectType, WALKTHROUGH_TYPES, SEATING_SURFACE_TYPES } from '../objects/registry.js';
+import { getObjectType, WALKTHROUGH_TYPES, SEATING_SURFACE_TYPES, CHAIR_TYPES } from '../objects/registry.js';
 
 export class World {
   constructor() {
@@ -250,7 +250,7 @@ export class World {
 
   chairsForTables() {
     const result = [];
-    for (const chair of this.findObjects('chair')) {
+    for (const chair of this.objects.filter(o => CHAIR_TYPES.has(o.type))) {
       for (const d of DIRS) {
         const neighbor = this.cellAt(chair.x + d.x, chair.y + d.y);
         if (neighbor && SEATING_SURFACE_TYPES.has(neighbor.type)) {
@@ -272,7 +272,7 @@ export class World {
 
   // every chair seated around the given table/counter — lets one interaction serve the whole group
   chairsOfTable(table) {
-    return this.findObjects('chair').filter(chair => this.tableOfChair(chair) === table);
+    return this.objects.filter(o => CHAIR_TYPES.has(o.type)).filter(chair => this.tableOfChair(chair) === table);
   }
 
   // every walkable cell that touches at least one water cell — where a fisherman can fish from

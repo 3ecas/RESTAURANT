@@ -1,10 +1,14 @@
 // Fisherman: catch -> freezer, one fish at a time — fish a random cell next to water for
-// 3-8s, then carry the catch straight to a freezer (that's the only stop, no extra prep)
+// 3-8s, then carry the catch straight to a freezer (that's the only stop, no extra prep).
+// Which fish gets caught is random (see data/fishTypes.js) — the carried item's `kind` is
+// the actual ingredient name, so depositing it at the freezer is generic, no per-fish code.
+
+import { pickFishCatch } from '../../data/fishTypes.js';
 
 export function updateFisherman(staff, dt, world, game) {
   if (staff.phase === 'idle') {
     const item = staff.carryItems[0];
-    if (item && item.kind === 'raw_fish') {
+    if (item) {
       _headToFreezer(staff, world);
       return;
     }
@@ -24,13 +28,15 @@ export function updateFisherman(staff, dt, world, game) {
   } else if (staff.phase === 'fishing') {
     staff.busyTimer -= dt;
     if (staff.busyTimer <= 0) {
-      staff.carryItems = [{ kind: 'raw_fish' }];
+      staff.carryItems = [{ kind: pickFishCatch() }];
       staff.updateCarryVisual();
       staff.phase = 'idle';
     }
   } else if (staff.phase === 'toFreezer') {
     if (!staff.hasPath) {
-      game.ingredients.shrimp = (game.ingredients.shrimp || 0) + staff.carryItems.length;
+      for (const item of staff.carryItems) {
+        game.ingredients[item.kind] = (game.ingredients[item.kind] || 0) + 1;
+      }
       staff.carryItems = [];
       staff.updateCarryVisual();
       staff.phase = 'idle';

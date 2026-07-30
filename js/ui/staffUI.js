@@ -1,6 +1,5 @@
 // Staff tab: hire panels (one per role) + the hired-staff table (train/fire)
 
-import { STAFF_MAX_LEVEL } from '../data/staffConfig.js';
 import { getHireCost, staffTrainCost, staffTrainTime } from '../game/staffEconomy.js';
 
 export const HIRE_ROLES = ['waiter', 'chef', 'cleaner', 'farmer', 'rancher', 'fisherman'];
@@ -51,14 +50,12 @@ export function renderStaffTable(game) {
   tbody.innerHTML = '';
   game.staff.forEach(s => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${s.name}</td><td>${ROLE_ICON[s.role]} ${s.role}</td><td>Lvl ${s.level}/${STAFF_MAX_LEVEL}</td><td></td><td></td>`;
+    tr.innerHTML = `<td>${s.name}</td><td>${ROLE_ICON[s.role]} ${s.role}</td><td>Lvl ${s.level}</td><td></td><td></td>`;
 
     const trainCell = tr.children[3];
     if (s.training) {
       const secsLeft = Math.max(0, Math.ceil(s.training.remaining / 1000));
       trainCell.textContent = `Training… ${secsLeft}s`;
-    } else if (s.level >= STAFF_MAX_LEVEL) {
-      trainCell.textContent = 'Max level';
     } else {
       const cost = staffTrainCost(s.level);
       const trainBtn = document.createElement('button');

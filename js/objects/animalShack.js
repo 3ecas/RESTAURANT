@@ -1,7 +1,6 @@
-// Animal Shack — where a rancher processes a grown chicken into meat
-// (see entities/staffRoles/rancher.js). Purely passive from the object's own perspective.
-
-export const CHICKEN_PROCESS_TIME = 6000; // ms to process a grown chicken
+// Animal Shack — where a rancher processes any grown animal (chicken, cow, ...) into its
+// yield ingredient. Processing time is per-animal-type (see shared/ranchAnimalFactory.js),
+// so this object stays animal-agnostic — purely passive from its own perspective.
 
 export const animalShack = {
   type: 'animalShack',

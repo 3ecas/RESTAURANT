@@ -1,7 +1,7 @@
 // A seated (or waiting-at-door) customer: order → wait → eat → pay → leave
 
 import { Mover } from './mover.js';
-import { RECIPES, getRecipe } from '../data/recipes.js';
+import { RECIPES, getRecipe, isRecipeUnlocked } from '../data/recipes.js';
 import { THINK_TIME, EAT_TIME } from '../data/balance.js';
 
 let _custId = 1;
@@ -43,7 +43,7 @@ export class Customer extends Mover {
           // ingredient isn't in stock (or the till can't cover the cost) — plain rice needs
           // neither, so it's the floor. Deciding immediately reserves the ingredient/cost so
           // a second customer can't also "order" the last unit of something already spoken for.
-          const enabled = RECIPES.filter(r => r.enabled).sort((a, b) => b.price - a.price);
+          const enabled = RECIPES.filter(r => r.enabled && isRecipeUnlocked(game, r)).sort((a, b) => b.price - a.price);
           const affordable = enabled.find(r => game.canCookRecipe(r.id));
           const fallback = enabled[enabled.length - 1] || RECIPES.find(r => r.id === 'rice') || RECIPES[0];
           this.order = (affordable || fallback).id;
@@ -79,6 +79,10 @@ export class Customer extends Mover {
         if (!this.hasPath) {
           const recipe = getRecipe(this.order);
           this.payBooth.collected += recipe.price;
+          // achievements track lifetime totals here, at the moment the customer actually
+          // pays — not when the booth is later collected, which is just a physical pickup
+          game.stats.customersServed += 1;
+          game.stats.totalRevenue += recipe.price;
           this.state = 'leaving';
           const ec = world.nearestEntranceCell(this.gx, this.gy);
           const path = world.pathTo(this.gx, this.gy, ec.x, ec.y);
