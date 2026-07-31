@@ -51,9 +51,9 @@ export function initUI(game) {
   updateOpenStatusUI(game);
 }
 
-// puts a held object back — into storage if it came from there (its x/y are meaningless
-// leftovers, never a real spot to restore), otherwise back where it was relocated from —
-// bound to Escape
+// puts a held object (or held staff member) back — into storage if it came from there (its
+// x/y are meaningless leftovers, never a real spot to restore), otherwise back where it was
+// relocated from — bound to Escape
 export function cancelHeldObject(game) {
   if (game.heldObject) {
     if (game.heldFromInventory) {
@@ -63,6 +63,10 @@ export function cancelHeldObject(game) {
       if (!placed) game.inventory.push(game.heldObject);
     }
     game.heldObject = null;
+  }
+  if (game.heldStaff) {
+    game.staffInventory.push({ role: game.heldStaff });
+    game.heldStaff = null;
   }
   game.heldFromInventory = false;
   refreshStorageUI(game);

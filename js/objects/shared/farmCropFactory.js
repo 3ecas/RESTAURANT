@@ -30,26 +30,6 @@ export function makeFarmCrop({ type, name, shopIcon, cost, crop, readyIcon }) {
     canRemove(obj) { return !obj.ready; },
     canMove(obj) { return !obj.ready; },
 
-    // player planting/harvesting directly. Staff farmers (entities/staffRoles/farmer.js)
-    // manipulate the same planted/ready/progress fields themselves rather than calling this.
-    interact(obj, ctx) {
-      if (!obj.planted) {
-        obj.planted = true;
-        obj.progress = 0;
-        obj.ready = false;
-        return true;
-      }
-      if (obj.ready) {
-        // harvesting doesn't unplant it — it just starts growing the next crop right away.
-        // the player banks it instantly, no need to carry it to the fridge by hand
-        obj.ready = false;
-        obj.progress = 0;
-        ctx.game.ingredients[crop] = (ctx.game.ingredients[crop] || 0) + 1;
-        return true;
-      }
-      return false;
-    },
-
     drawExtra(ctx, obj, px, py, cellSize) {
       if (obj.planted && !obj.ready) progressBar(ctx, px, py, cellSize, obj.progress / FARM_GROW_TIME, '#8bc34a');
       if (obj.ready) readyCheckmark(ctx, px, py, cellSize);

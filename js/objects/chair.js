@@ -1,6 +1,5 @@
-// Chair — walkthrough furniture; interacting defers to its paired table/counter
-// (see World.tableOfChair). Note: unlike interacting with the table directly, interacting
-// via the chair never picks up a dirty plate — only serveTable applies here.
+// Chair — walkthrough furniture; pairs with an adjacent table/counter to seat a customer
+// (see World.tableOfChair / chairsForTables).
 
 export const chair = {
   type: 'chair',
@@ -15,11 +14,5 @@ export const chair = {
 
   createState(base) {
     return Object.assign(base, { occupied: null });
-  },
-
-  interact(obj, ctx) {
-    const table = ctx.world.tableOfChair(obj);
-    if (!table) return false;
-    return ctx.game.serveTable(table);
   },
 };

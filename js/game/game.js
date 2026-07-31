@@ -1,17 +1,19 @@
 // The Game class: world/money/inventory state, buy/place/store/sell, staff hire/fire/train,
-// customer spawning, player interaction, and the per-tick simulation update.
+// customer spawning, and the per-tick simulation update. There's no player character — the
+// restaurant runs entirely on hired staff; the only "input" is building/buying/hiring.
 
-import { COLS, ROWS, CELL, DIRS } from '../core/constants.js';
+import { COLS, ROWS, CELL } from '../core/constants.js';
 import { World } from '../core/world.js';
 import { getObjectType, createObject, ITEM_DEFS, FARM_CROP_TYPES, ANIMAL_TYPES, STOVE_TYPES } from '../objects/registry.js';
 import { tickFarmGrowth } from '../objects/shared/farmCropFactory.js';
 import { tickCooking } from '../objects/shared/stoveFactory.js';
 import { tickAnimalHunger } from '../objects/shared/ranchAnimalFactory.js';
+import { tickWaterTap } from '../objects/waterTap.js';
 import { getRecipe, isRecipeUnlocked } from '../data/recipes.js';
-import { MAX_WAITING, SHOP_REFRESH_INTERVAL, EAT_TIME, SPAWN_CYCLE_MS, SPAWN_MIN_PER_CYCLE, SPAWN_MAX_PER_CYCLE } from '../data/balance.js';
-import { Player } from '../entities/player.js';
+import { MAX_WAITING, SHOP_REFRESH_INTERVAL, SPAWN_CYCLE_MS, SPAWN_MIN_PER_CYCLE, SPAWN_MAX_PER_CYCLE } from '../data/balance.js';
 import { Customer } from '../entities/customer.js';
 import { StaffMember } from '../entities/staffMember.js';
+import { FloatingText } from '../entities/floatingText.js';
 import { getHireCost, staffTrainCost, staffTrainTime } from './staffEconomy.js';
 import { renderPalette } from '../ui/paletteUI.js';
 import { refreshStorageUI } from '../ui/hotbarUI.js';
@@ -28,15 +30,19 @@ import { renderAchievements } from '../ui/achievementsUI.js';
 export class Game {
   constructor() {
     this.world = new World();
-    this.money = 50;
-    this.staff = [];
+    // just enough to hire one chef + one waiter + one cleaner right away (100 each, see
+    // staffEconomy.js's getHireCost) — those three are the minimum needed for the
+    // restaurant to run itself now that there's no player to fill in manually
+    this.money = 300;
+    this.staff = []; // hired AND placed — actually working
+    this.staffInventory = []; // hired but not yet placed — waiting in the quick bar, see hireStaff/beginPlacingStaff
+    this.heldStaff = null; // the role currently in-hand, ready to place (parallel to heldObject)
     this.inventory = []; // bought/stored objects not currently on the grid
     this.heldObject = null; // the single object currently in-hand, ready to place
     this.heldFromInventory = false; // true while placing from a storage stack — keeps refilling after each placement
     this.contextTarget = null;
     this.hoverCell = null;
     this.menuOpen = false;
-    this.keys = new Set();
     this.camera = { x: 0, y: 0 }; // pixel offset of the viewport's top-left within the world; panned via right-mouse-drag (see game/input.js)
     this.viewportW = COLS * CELL; // current canvas size in px — kept in sync by main.js's resize handler (setViewportSize)
     this.viewportH = ROWS * CELL;
@@ -52,6 +58,7 @@ export class Game {
     }; // ingredient stock, consumed by recipes that need them — starts empty, so only rice (which needs nothing) is ever ordered until you have some
     this.shopStock = {}; // how many of each shop item are currently available to buy
     this.shopRefreshTimer = SHOP_REFRESH_INTERVAL;
+    this.floatingTexts = []; // transient "+$X" payment popups (see entities/floatingText.js)
 
     // achievements: sequential deadlines, not experience — see data/achievements.js. Must be
     // set up before refreshShopStock() below, since renderPalette() reads unlockedStoveTiers.
@@ -64,7 +71,6 @@ export class Game {
     this.refreshShopStock();
 
     this.setupLevel();
-    this.player = new Player(8, 10);
   }
 
   // recipes with no ingredients need nothing else; rice is always cookable — the floor
@@ -106,20 +112,58 @@ export class Game {
 
   setupLevel() {
     const w = this.world;
-    w.place(createObject('door'), 9, 14);
-    w.place(createObject('spawnPoint'), 7, 7);
-    w.generateWater(15);
 
-    // a minimal starting kitchen is pre-placed — spread out a bit, except the fridge and
-    // stove (kept side by side) and the paying booth (kept right next to the door)
-    w.place(createObject('fridge'), 9, 7);
-    w.place(createObject('stove'), 10, 7);
-    w.place(createObject('orderStand'), 12, 7);
-    w.place(createObject('sink'), 14, 7);
-    w.place(createObject('payingBooth'), 11, 13);
-    w.place(createObject('table'), 9, 11);
-    w.place(createObject('chair'), 8, 11);
-    w.place(createObject('chair'), 10, 11);
+    // a fully enclosed starting room — 10 wide x 6 tall, walled on all sides except a
+    // single 1-cell entrance. The top-left interior corner is a black & white tiled kitchen
+    // nook holding the core appliances; the rest of the room is wood-floored dining space
+    // with a small 3-seat bar along the right wall.
+    const ROOM_X = 6, ROOM_Y = 6, ROOM_W = 10, ROOM_H = 6;
+    const DOOR_X = ROOM_X + 5, DOOR_Y = ROOM_Y + ROOM_H - 1; // centered on the bottom wall
+    const WINDOW_XS = [ROOM_X + 3, ROOM_X + 6]; // two window walls, symmetric along the top wall
+
+    for (let x = ROOM_X; x < ROOM_X + ROOM_W; x++) {
+      for (let y = ROOM_Y; y < ROOM_Y + ROOM_H; y++) {
+        const onBoundary = x === ROOM_X || x === ROOM_X + ROOM_W - 1 || y === ROOM_Y || y === ROOM_Y + ROOM_H - 1;
+        if (!onBoundary) continue;
+        if (x === DOOR_X && y === DOOR_Y) w.place(createObject('door'), x, y);
+        else if (y === ROOM_Y && WINDOW_XS.includes(x)) w.place(createObject('windowWall'), x, y);
+        else w.place(createObject('wall'), x, y);
+      }
+    }
+
+    // kitchen nook: fridge, stove, sink, order stand on black & white tile
+    const KITCHEN_X = ROOM_X + 1, KITCHEN_Y = ROOM_Y + 1, KITCHEN_W = 3, KITCHEN_H = 3;
+    for (let x = KITCHEN_X; x < KITCHEN_X + KITCHEN_W; x++) {
+      for (let y = KITCHEN_Y; y < KITCHEN_Y + KITCHEN_H; y++) {
+        w.placeFloorTile(x, y, 'floorTileBW');
+      }
+    }
+    // one appliance in each corner of the 3x3 nook, leaving the whole middle row + middle
+    // column open as a connected walkway — every corner touches 1-2 boundary walls, so
+    // packing anything else against its remaining open side(s) would wall it off entirely
+    w.place(createObject('fridge'), KITCHEN_X, KITCHEN_Y);
+    w.place(createObject('sink'), KITCHEN_X + 2, KITCHEN_Y);
+    w.place(createObject('orderStand'), KITCHEN_X, KITCHEN_Y + 2);
+    w.place(createObject('stove'), KITCHEN_X + 2, KITCHEN_Y + 2);
+
+    // the rest of the interior: wood floor dining area
+    for (let x = ROOM_X + 1; x < ROOM_X + ROOM_W - 1; x++) {
+      for (let y = ROOM_Y + 1; y < ROOM_Y + ROOM_H - 1; y++) {
+        const inKitchen = x >= KITCHEN_X && x < KITCHEN_X + KITCHEN_W && y >= KITCHEN_Y && y < KITCHEN_Y + KITCHEN_H;
+        if (inKitchen) continue;
+        w.placeFloorTile(x, y, 'floorTile');
+      }
+    }
+
+    // a small 3-seat bar along the right interior wall
+    const BAR_X = ROOM_X + ROOM_W - 2;
+    for (let i = 0; i < 3; i++) {
+      const y = ROOM_Y + 2 + i;
+      w.place(createObject('counter'), BAR_X, y);
+      w.place(createObject('chair'), BAR_X - 1, y);
+    }
+
+    w.generateWater(15);
   }
 
   // called by main.js whenever the canvas is resized (the viewport fills the browser
@@ -143,6 +187,10 @@ export class Game {
   addMoney(amount) {
     this.money += amount;
     updateMoneyUI(this);
+  }
+
+  spawnFloatingText(x, y, text, color) {
+    this.floatingTexts.push(new FloatingText(x, y, text, color));
   }
 
   openMenu() {
@@ -173,7 +221,7 @@ export class Game {
   // picks up one item of this type from storage — the hotbar/expand panel call this.
   // canvas click-to-place keeps refilling from the same stack until it runs out
   beginPlacingType(type) {
-    if (this.heldObject) return;
+    if (this.heldObject || this.heldStaff) return;
     const idx = this.inventory.findIndex(o => o.type === type);
     if (idx === -1) return;
     this.heldObject = this.inventory.splice(idx, 1)[0];
@@ -184,7 +232,7 @@ export class Game {
 
   relocateObject(obj) {
     hideContextMenu();
-    if (this.heldObject || !this.canMoveObject(obj)) return;
+    if (this.heldObject || this.heldStaff || !this.canMoveObject(obj)) return;
     this.evictCustomersFrom(obj);
     this.world.removeAt(obj.x, obj.y);
     this.heldObject = obj;
@@ -238,8 +286,8 @@ export class Game {
   }
 
   // gates Move — relocating keeps the same object (and everything on/in it), so an order
-  // stand's pending orders and a paying booth's collected cash are safe to carry along.
-  // Delegates to the object type's own canMove hook (default: always movable).
+  // stand's pending orders are safe to carry along. Delegates to the object type's own
+  // canMove hook (default: always movable).
   canMoveObject(obj) {
     const t = getObjectType(obj.type);
     return t && t.canMove ? t.canMove(obj) : true;
@@ -247,15 +295,46 @@ export class Game {
 
   // ---- staff ----
 
+  // buys one staff member of this role — they go into the roster waiting to be placed (see
+  // the quick bar / beginPlacingStaff below), not straight onto the grid. They don't work,
+  // draw, or update until actually placed.
   hireStaff(role) {
     const cost = getHireCost(this, role);
     if (this.money < cost) return;
     this.addMoney(-cost);
-    const spot = this.findSpawnSpot();
-    const s = new StaffMember(spot.x, spot.y, role);
+    this.staffInventory.push({ role });
+    renderStaffPanels(this);
+    refreshStorageUI(this);
+  }
+
+  // picks up one staff member of this role from the roster waiting to be placed — the
+  // quick bar calls this, exactly like beginPlacingType does for furniture
+  beginPlacingStaff(role) {
+    if (this.heldObject || this.heldStaff) return;
+    const idx = this.staffInventory.findIndex(s => s.role === role);
+    if (idx === -1) return;
+    this.staffInventory.splice(idx, 1);
+    this.heldStaff = role;
+    this.closeMenu();
+    refreshStorageUI(this);
+  }
+
+  // drops the held staff member onto the grid at (gx,gy) and puts them to work
+  placeHeldStaff(gx, gy) {
+    const role = this.heldStaff;
+    this.heldStaff = null;
+    const s = new StaffMember(gx, gy, role);
     this.staff.push(s);
     renderStaffTable(this);
     renderStaffPanels(this);
+    // keep going — pull the next one of the same role straight into hand, same as
+    // continuePlacingFromStack does for furniture
+    const idx = this.staffInventory.findIndex(x => x.role === role);
+    if (idx !== -1) {
+      this.staffInventory.splice(idx, 1);
+      this.heldStaff = role;
+    }
+    refreshStorageUI(this);
   }
 
   fireStaff(id) {
@@ -277,22 +356,6 @@ export class Game {
     const time = staffTrainTime(s.level);
     s.training = { remaining: time, total: time };
     renderStaffTable(this);
-  }
-
-  findSpawnSpot() {
-    const sp = this.world.findObjects('spawnPoint')[0];
-    if (sp) {
-      for (const d of DIRS) {
-        const nx = sp.x + d.x, ny = sp.y + d.y;
-        if (this.world.isWalkable(nx, ny)) return { x: nx, y: ny };
-      }
-    }
-    for (let y = 0; y < ROWS; y++) {
-      for (let x = 0; x < COLS; x++) {
-        if (this.world.isWalkable(x, y)) return { x, y };
-      }
-    }
-    return { x: 0, y: 0 };
   }
 
   // ---- customer spawning ----
@@ -354,78 +417,7 @@ export class Game {
     }
   }
 
-  // ---- player interaction ----
-
-  interact() {
-    const world = this.world;
-    const player = this.player;
-    const cx = player.cellX, cy = player.cellY;
-    // facing/adjacent targets take priority — otherwise standing on a walkable object
-    // (a ready farm plot, say) while facing something else (a fridge) would silently
-    // hijack the interact into harvesting instead of reaching the thing you meant to use
-    for (const d of DIRS) {
-      const obj = world.cellAt(cx + d.x, cy + d.y);
-      if (!obj) continue;
-      if (this.tryInteractWith(obj)) return;
-    }
-    // nothing adjacent responded — fall back to whatever's directly underfoot
-    // (e.g. a walkthrough chair, or a farm plot you're standing on)
-    const here = world.cellAt(cx, cy);
-    if (here) this.tryInteractWith(here);
-  }
-
-  // delegates entirely to the object type's own interact hook (see js/objects/*.js) — Game
-  // doesn't know what a fridge or a stove does, just how to ask it to handle an interaction
-  tryInteractWith(obj) {
-    const t = getObjectType(obj.type);
-    if (!t || !t.interact) return false;
-    return t.interact(obj, { player: this.player, world: this.world, game: this });
-  }
-
-  // one interaction handles the whole table: take every pending order at once, and
-  // deliver whatever the player's carrying to any matching customer seated there.
-  // Called by chair.js/table.js/wall.js's interact hooks (see shared/seatingInteract.js).
-  serveTable(table) {
-    const world = this.world;
-    const player = this.player;
-    const chairs = world.chairsOfTable(table);
-    let did = false;
-
-    // taking an order doesn't need a free hand — only a dirty plate or nothing at all
-    if (!player.carrying || player.carrying.kind === 'dirty') {
-      const stand = world.findObjects('orderStand')[0];
-      if (stand) {
-        for (const chair of chairs) {
-          const customer = chair.occupied;
-          if (customer && customer.state === 'waitingOrder') {
-            stand.pending.push({ recipe: customer.order });
-            customer.state = 'waitingFood';
-            did = true;
-          }
-        }
-      }
-    }
-
-    if (player.carrying && player.carrying.kind === 'cooked') {
-      const customer = chairs.map(c => c.occupied).find(c => c && c.state === 'waitingFood' && c.order === player.carrying.recipe);
-      if (customer) {
-        customer.state = 'eating';
-        customer.timer = EAT_TIME;
-        player.carrying = null;
-        did = true;
-      }
-    }
-
-    return did;
-  }
-
   update(dt) {
-    this.player.update(dt, this.world, this.keys);
-    if (this.player.pendingInteractTarget && !this.player.hasPath) {
-      this.interact();
-      this.player.pendingInteractTarget = null;
-    }
-
     for (const t of STOVE_TYPES) {
       for (const stove of this.world.findObjects(t.type)) tickCooking(stove, dt);
     }
@@ -437,6 +429,8 @@ export class Game {
     for (const t of ANIMAL_TYPES) {
       for (const animal of this.world.findObjects(t.type)) tickAnimalHunger(animal, t, dt, this.world);
     }
+
+    for (const tap of this.world.findObjects('waterTap')) tickWaterTap(tap, dt, this);
 
     for (const s of this.staff) s.update(dt, this.world, this);
 
@@ -462,6 +456,8 @@ export class Game {
 
     for (const c of this.world.customers) c.update(dt, this.world, this);
     this.world.customers = this.world.customers.filter(c => c.state !== 'done');
+
+    this.floatingTexts = this.floatingTexts.filter(f => f.update(dt));
 
     this.promoteWaitingCustomers();
 

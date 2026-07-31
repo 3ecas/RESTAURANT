@@ -7,6 +7,7 @@ export const door = {
   name: 'Door',
   icon: '🚪',
   color: 'rgba(120, 200, 120, 0.9)',
+  image: 'ASSETS/DOOR.png',
   walkthrough: true,
   storable: false,
 };

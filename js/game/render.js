@@ -4,15 +4,13 @@
 
 import { COLS, ROWS, CELL, SCALE } from '../core/constants.js';
 import { getImage } from '../core/assets.js';
-import { getObjectType, getIconImageForType, FLOOR_TILE_TYPES } from '../objects/registry.js';
+import { getObjectType, getIconImageForType, getIconImageForObject, FLOOR_TILE_TYPES } from '../objects/registry.js';
 import { getRecipe } from '../data/recipes.js';
 import { CARRY_ICONS } from '../data/carryIcons.js';
 import { roundRect, badge, iconBadge } from './drawHelpers.js';
 
 export const ROLE_COLOR = { waiter: '#3fae55', chef: '#f5f5f5', cleaner: '#1a1a1a', farmer: '#c9a227', rancher: '#8b5e3c', fisherman: '#3f8fae' };
 export const ROLE_OUTLINE = { waiter: '#245c30', chef: '#999999', cleaner: '#666666', farmer: '#7a621a', rancher: '#5a3c22', fisherman: '#245a70' };
-export const PLAYER_COLOR = '#3f7fff';
-export const PLAYER_OUTLINE = '#1f3f99';
 export const CUSTOMER_COLOR = '#9e9e9e';
 export const CUSTOMER_OUTLINE = '#5a5a5a';
 
@@ -31,7 +29,7 @@ function drawGrassBackground(ctx, world) {
   }
 }
 
-// flooring the player has bought and placed — sits above the grass, below everything else
+// flooring bought and placed from the shop — sits above the grass, below everything else
 function drawFloorTiles(ctx, world) {
   for (const [key, type] of world.floorTiles) {
     const [x, y] = key.split(',').map(Number);
@@ -60,13 +58,13 @@ function drawWater(ctx, world) {
   }
 }
 
-function drawObject(ctx, obj) {
+function drawObject(ctx, obj, world) {
   const t = getObjectType(obj.type);
   if (!t) return;
   const px = obj.x * CELL, py = obj.y * CELL;
   const icon = t.getIcon ? t.getIcon(obj) : t.icon;
 
-  const img = getIconImageForType(obj.type);
+  const img = getIconImageForObject(obj, world);
   if (img && img.complete && img.naturalWidth > 0) {
     ctx.drawImage(img, px, py, CELL, CELL);
   } else {
@@ -122,6 +120,29 @@ function drawCustomer(ctx, c) {
   }
 }
 
+// transient "+$X" payment popups — plain opacity fade, no motion (see entities/floatingText.js)
+function drawFloatingTexts(ctx, texts) {
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold ' + Math.round(13 * SCALE) + 'px sans-serif';
+  for (const f of texts) {
+    ctx.globalAlpha = f.opacity;
+    ctx.fillStyle = f.color;
+    ctx.fillText(f.text, f.x, f.y);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawHeldStaffPreview(ctx, game) {
+  if (!game.heldStaff || !game.hoverCell) return;
+  const { x, y } = game.hoverCell;
+  const px = x * CELL + CELL / 2, py = y * CELL + CELL / 2;
+  const valid = game.world.isWalkable(x, y);
+  ctx.globalAlpha = 0.6;
+  drawCharacter(ctx, px, py, valid ? ROLE_COLOR[game.heldStaff] : '#e05252', valid ? ROLE_OUTLINE[game.heldStaff] : '#8f2f2f', null, game.heldStaff);
+  ctx.globalAlpha = 1;
+}
+
 function drawHeldPreview(ctx, game) {
   if (!game.heldObject || !game.hoverCell) return;
   const { x, y } = game.hoverCell;
@@ -132,7 +153,9 @@ function drawHeldPreview(ctx, game) {
   const valid = FLOOR_TILE_TYPES.has(type)
     ? game.world.inBounds(x, y) && !game.world.isWater(x, y)
     : game.world.isBuildable(x, y);
-  const img = getIconImageForType(type);
+  // a fake {type,x,y} stand-in is enough for a type's getImageSrc hook (e.g. wall.js's
+  // orientation detection) to preview correctly at the hovered cell before it's really placed
+  const img = getIconImageForObject({ type, x, y }, game.world);
   ctx.globalAlpha = 0.6;
   if (img && img.complete && img.naturalWidth > 0) {
     ctx.drawImage(img, x * CELL, y * CELL, CELL, CELL);
@@ -167,17 +190,19 @@ export function render(ctx, canvas, game) {
   drawFloorTiles(ctx, game.world);
   drawGrid(ctx);
   drawWater(ctx, game.world);
-  for (const obj of game.world.objects) drawObject(ctx, obj);
+  for (const obj of game.world.objects) drawObject(ctx, obj, game.world);
 
   const drawables = [
-    { py: game.player.py, draw: () => drawCharacter(ctx, game.player.px, game.player.py, PLAYER_COLOR, PLAYER_OUTLINE, game.player.carrying) },
     ...game.world.customers.map(c => ({ py: c.py, draw: () => drawCustomer(ctx, c) })),
     ...game.staff.map(s => ({ py: s.py, draw: () => drawCharacter(ctx, s.px, s.py, ROLE_COLOR[s.role], ROLE_OUTLINE[s.role], s.carrying, s.role) })),
   ];
   drawables.sort((a, b) => a.py - b.py);
   for (const d of drawables) d.draw();
 
+  drawFloatingTexts(ctx, game.floatingTexts);
+
   drawHeldPreview(ctx, game);
+  drawHeldStaffPreview(ctx, game);
 
   ctx.restore();
 }

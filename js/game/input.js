@@ -1,5 +1,6 @@
-// Keyboard + mouse wiring: WASD, Space/E/Escape, hover preview, right-click context menu,
-// and left-click (place held object, or click-to-move / click-to-interact when empty-handed)
+// Keyboard + mouse wiring: E/Escape, hover preview, right-click context menu + camera pan,
+// and left-click to place a held object. There's no player character — nothing here moves
+// or interacts with the world directly, it's all building/menu input.
 
 import { CELL } from '../core/constants.js';
 import { FLOOR_TILE_TYPES } from '../objects/registry.js';
@@ -40,20 +41,11 @@ export function setupInput(canvas, game) {
     const tag = document.activeElement && document.activeElement.tagName;
     if (['INPUT', 'SELECT', 'TEXTAREA'].includes(tag)) return;
     const k = e.key.toLowerCase();
-    if (['w', 'a', 's', 'd'].includes(k)) {
-      game.keys.add(k);
-    } else if (k === ' ') {
-      e.preventDefault();
-      if (!e.repeat) game.interact();
-    } else if (k === 'e') {
+    if (k === 'e') {
       game.toggleMenu();
     } else if (k === 'escape') {
       cancelHeldObject(game);
     }
-  });
-  window.addEventListener('keyup', (e) => {
-    const k = e.key.toLowerCase();
-    if (['w', 'a', 's', 'd'].includes(k)) game.keys.delete(k);
   });
 
   canvas.addEventListener('mousemove', (e) => {
@@ -108,7 +100,7 @@ export function setupInput(canvas, game) {
   canvas.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     if (suppressNextContextMenu) { suppressNextContextMenu = false; return; }
-    if (game.heldObject) return;
+    if (game.heldObject || game.heldStaff) return;
     const { gx, gy } = canvasCellFromEvent(canvas, game, e);
     const obj = game.world.cellAt(gx, gy);
     if (!obj) { hideContextMenu(); return; }
@@ -131,37 +123,24 @@ export function setupInput(canvas, game) {
     const { gx, gy } = canvasCellFromEvent(canvas, game, e);
     if (!game.world.inBounds(gx, gy)) return;
 
-    if (game.heldObject) {
-      // flooring is a background layer, not a world object — it paints onto any
-      // in-bounds, non-water cell regardless of what's already placed there
-      if (FLOOR_TILE_TYPES.has(game.heldObject.type)) {
-        const placedType = game.heldObject.type;
-        if (game.world.placeFloorTile(gx, gy, placedType)) continuePlacingFromStack(game, placedType);
-        return;
-      }
-      if (game.world.canPlace(game.heldObject.type, gx, gy)) {
-        const placedType = game.heldObject.type;
-        game.world.place(game.heldObject, gx, gy);
-        continuePlacingFromStack(game, placedType);
-      }
+    if (game.heldStaff) {
+      if (game.world.isWalkable(gx, gy)) game.placeHeldStaff(gx, gy);
       return;
     }
 
-    // not holding anything: left-click to walk there, or to walk up to an object and
-    // auto-interact with it (same effect as walking up and pressing SPACE)
-    const obj = game.world.cellAt(gx, gy);
-    if (obj) {
-      const path = game.world.pathToAdjacent(game.player.cellX, game.player.cellY, gx, gy);
-      if (path) {
-        game.player.setPath(path);
-        game.player.pendingInteractTarget = obj;
-      }
-    } else if (game.world.isWalkable(gx, gy)) {
-      const path = game.world.pathTo(game.player.cellX, game.player.cellY, gx, gy);
-      if (path) {
-        game.player.setPath(path);
-        game.player.pendingInteractTarget = null;
-      }
+    if (!game.heldObject) return;
+
+    // flooring is a background layer, not a world object — it paints onto any
+    // in-bounds, non-water cell regardless of what's already placed there
+    if (FLOOR_TILE_TYPES.has(game.heldObject.type)) {
+      const placedType = game.heldObject.type;
+      if (game.world.placeFloorTile(gx, gy, placedType)) continuePlacingFromStack(game, placedType);
+      return;
+    }
+    if (game.world.canPlace(game.heldObject.type, gx, gy)) {
+      const placedType = game.heldObject.type;
+      game.world.place(game.heldObject, gx, gy);
+      continuePlacingFromStack(game, placedType);
     }
   });
 }

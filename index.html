@@ -69,7 +69,7 @@
         </div>
 
         <div id="tab-staff" class="tabPanel">
-          <p class="tabHelp">Hire staff to automate the restaurant. They'll take orders, cook, deliver food and clean up on their own. Each locked slot shows the price to hire the next one — it climbs steeply per role.</p>
+          <p class="tabHelp">Hire staff to automate the restaurant. Each locked slot shows the price to hire the next one — it climbs steeply per role. Hiring doesn't put them to work yet: they wait in the <strong>quick bar</strong> (bottom center) until you click their slot and click a tile to place them — only then do they start taking orders, cooking, delivering food, or cleaning up.</p>
           <p class="tabHelp">Train staff to level up — no limit: chefs move and cook faster, waiters and cleaners move faster and carry more plates per trip. Cost and time keep climbing each level, so it gets expensive fast.</p>
           <div id="staffPanels"></div>
           <table id="staffTable">
@@ -92,23 +92,26 @@
         <div id="tab-tutorial" class="tabPanel">
           <p class="tabHelp"><strong>Controls</strong></p>
           <ul class="tutorialList">
-            <li><strong>WASD</strong> — move around</li>
-            <li><strong>SPACE</strong> — interact (serve a table, cook, collect payment...)</li>
+            <li>There's no character to move — you manage the restaurant entirely from the menus and the build cursor. Everything runs on hired staff.</li>
             <li><strong>E</strong> — open/close this menu</li>
             <li><strong>ESC</strong> — put down whatever you're currently holding</li>
-            <li>Right-click a placed object to Move, Store, or Sell it — appliances work from any side, just walk up and press SPACE</li>
-            <li>The <strong>quick bar</strong> (bottom center) is your storage — click a slot to start placing that item; click ▲ to see everything, grouped by category</li>
-            <li>If a slot has more than one item, placing one keeps the next in hand automatically — keep clicking tiles to place the whole stack, or press ESC to stop early</li>
+            <li>Left-click a tile to place whatever you're holding; right-click a placed object to Move, Store, or Sell it</li>
+            <li>Hold the <strong>right mouse button</strong> and drag to pan the camera around the map</li>
+            <li>The <strong>quick bar</strong> (bottom center) holds both storage and hired-but-unplaced staff — click a slot to pick it up; click ▲ to see everything, grouped by category</li>
+            <li>If a slot has more than one item (or staff member), placing one keeps the next in hand automatically — keep clicking tiles to place the whole stack, or press ESC to stop early</li>
           </ul>
           <p class="tabHelp"><strong>Getting started</strong></p>
           <ul class="tutorialList">
-            <li>Everything starts in storage — place your Fridge, Stove, Sink, Order Stand, Paying Booth, Table and Chairs anywhere on the field to build your kitchen</li>
-            <li>Interact with a seated customer's table to take their order, then cook it: grab the ingredient at the <strong>Fridge</strong>, cook it at the <strong>Stove</strong>, and drop the finished dish at the <strong>Order Stand</strong></li>
+            <li>You start with just enough gold to hire a <strong>Chef</strong>, a <strong>Waiter</strong>, and a <strong>Cleaner</strong> — hire all three from the <strong>Staff</strong> tab, since nothing gets cooked, served, or cleaned without them</li>
+            <li>Hired staff wait in the <strong>quick bar</strong> until placed — click their slot there, then click an open tile in the room to put them to work; they'll keep refilling into your hand if you bought more than one</li>
+            <li>You start in a small enclosed room with a walled-off kitchen nook (Fridge, Stove, Sink, Order Stand) and a 3-seat Counter bar — expand from there with items bought from the <strong>Shop</strong> tab</li>
+            <li>Customers pay automatically the moment they finish eating — watch for the little gold "+$" that pops up over their head</li>
+            <li>Waiters take orders and deliver food, chefs fetch ingredients and cook, cleaners clear dirty tables — it all happens on its own once they're placed</li>
             <li>A <strong>Counter</strong> works as bar seating too — put a chair next to one and customers will sit and eat right there, no table needed</li>
-            <li>Grow crops (wheat, tomato, cabbage, corn, potato, carrot, onion, pumpkin) on their matching plot, wait for them to grow, then harvest — any <strong>Fridge</strong> shows your current stock, and staff will always use whichever fridge is closest to them</li>
-            <li>Fishermen catch fish near water on their own — usually shrimp, sometimes a rarer salmon — and freeze it at a <strong>Freezer</strong>, no extra prep needed</li>
-            <li>Ranchers feed <strong>Chickens</strong> and <strong>Cows</strong> from their matching feeder (stocked with wheat from a fridge) and process grown animals at the <strong>Animal Shack</strong></li>
-            <li>Hire staff from the <strong>Staff</strong> tab to automate cooking, serving, cleaning and farming (farmers plant and harvest on their own) — train them to level up</li>
+            <li>Grow crops (wheat, tomato, cabbage, corn, potato, carrot, onion, pumpkin) on their matching plot — a <strong>Farmer</strong> plants and harvests them automatically; any <strong>Fridge</strong> shows your current stock</li>
+            <li><strong>Fishermen</strong> catch fish near water on their own — usually shrimp, sometimes a rarer salmon — and freeze it at a <strong>Freezer</strong>, no extra prep needed</li>
+            <li><strong>Ranchers</strong> feed Chickens and Cows from their matching feeder (stocked with wheat from a fridge) and process grown animals at the <strong>Animal Shack</strong></li>
+            <li>Train staff from the <strong>Staff</strong> tab to level them up — faster, more capable versions of the same role</li>
             <li>Watch the <strong>📋 Orders</strong> panel (top of screen) to see what's cooking and what's ready to deliver</li>
           </ul>
         </div>

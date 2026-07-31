@@ -14,10 +14,11 @@ import { waterTap } from './waterTap.js';
 import { prepCounter } from './prepCounter.js';
 import { orderStand } from './orderStand.js';
 import { sink } from './sink.js';
-import { payingBooth } from './payingBooth.js';
 import { table } from './table.js';
 import { chair } from './chair.js';
+import { counter } from './counter.js';
 import { wall } from './wall.js';
+import { windowWall } from './windowWall.js';
 import { door } from './door.js';
 import { farmPlot } from './farmPlot.js';
 import { tomatoFarm } from './tomatoFarm.js';
@@ -33,7 +34,6 @@ import { chickenFeeder } from './chickenFeeder.js';
 import { cow } from './cow.js';
 import { cowFeeder } from './cowFeeder.js';
 import { animalShack } from './animalShack.js';
-import { spawnPoint } from './spawnPoint.js';
 import { floorTile } from './floorTile.js';
 import { floorTileBW } from './floorTileBW.js';
 import { roundTable } from './roundTable.js';
@@ -41,12 +41,12 @@ import { oakChair } from './oakChair.js';
 import { pottedPlant } from './pottedPlant.js';
 
 export const OBJECT_TYPES = [
-  fridge, stove, stoveII, stoveIII, oven, waterTap, prepCounter, orderStand, sink, payingBooth,
-  table, chair, wall, door,
+  fridge, stove, stoveII, stoveIII, oven, waterTap, prepCounter, orderStand, sink,
+  table, chair, counter, wall, windowWall, door,
   roundTable, oakChair, pottedPlant,
   farmPlot, tomatoFarm, cabbageFarm, cornFarm, potatoFarm, carrotFarm, onionFarm, pumpkinFarm,
   freezer, chicken, chickenFeeder, cow, cowFeeder, animalShack,
-  spawnPoint, floorTile, floorTileBW,
+  floorTile, floorTileBW,
 ];
 
 const BY_TYPE = new Map(OBJECT_TYPES.map(t => [t.type, t]));
@@ -90,4 +90,15 @@ export function createObject(type) {
 export function getIconImageForType(type) {
   const t = getObjectType(type);
   return t && t.image ? getImage(t.image) : null;
+}
+
+// like getIconImageForType, but lets a type compute its image dynamically from its own
+// position/neighbors instead of a fixed path — see objects/wall.js's getImageSrc, which
+// picks a horizontal- vs vertical-run sprite based on which way its neighboring walls
+// extend. `obj` only needs `.type`, `.x`, `.y` — a placement-preview stand-in works fine.
+export function getIconImageForObject(obj, world) {
+  const t = getObjectType(obj.type);
+  if (!t) return null;
+  const src = t.getImageSrc ? t.getImageSrc(obj, world) : t.image;
+  return src ? getImage(src) : null;
 }

@@ -1,5 +1,5 @@
-// Order Stand — the hand-off point between cooking and delivery: chefs/players drop cooked
-// dishes here, waiters/players pick them up to deliver.
+// Order Stand — the hand-off point between cooking and delivery: chefs drop cooked dishes
+// here (entities/staffRoles/chef.js), waiters pick them up to deliver (staffRoles/waiter.js).
 
 import { badge } from '../game/drawHelpers.js';
 
@@ -17,21 +17,6 @@ export const orderStand = {
   },
 
   canRemove(obj) { return !(obj.pending.length || obj.ready.length); },
-
-  interact(obj, ctx) {
-    const { player } = ctx;
-    if (player.carrying && player.carrying.kind === 'cooked') {
-      obj.ready.push({ recipe: player.carrying.recipe, claimedBy: null });
-      player.carrying = null;
-      return true;
-    }
-    if (!player.carrying && obj.ready.length) {
-      const dish = obj.ready.shift();
-      player.carrying = { kind: 'cooked', recipe: dish.recipe };
-      return true;
-    }
-    return false;
-  },
 
   drawExtra(ctx, obj, px, py, cellSize) {
     if (obj.pending.length > 0) badge(ctx, px + 8, py + 7, obj.pending.length, '#e05252');

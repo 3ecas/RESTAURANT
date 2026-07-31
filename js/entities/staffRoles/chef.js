@@ -105,7 +105,7 @@ export function updateChef(staff, dt, world, game) {
     }
   } else if (staff.phase === 'toPrepStation') {
     if (!staff.hasPath) {
-      // instant hand-off — same effect as the station's own player-facing interact()
+      // instant hand-off — prep stations are stateless, just a checkpoint in the process
       staff.carrying.step = (staff.carrying.step || 0) + 1;
       staff.task = {};
       staff.phase = 'idle';
@@ -129,7 +129,7 @@ export function updateChef(staff, dt, world, game) {
       const { stove, slotIndex } = staff.task;
       const slot = stove.slots[slotIndex];
       if (!slot.ready) {
-        // someone else (e.g. the player) already collected it — look for other work
+        // another chef already collected it — look for other work
         slot.collectedBy = null;
         staff.task = {};
         staff.phase = 'idle';

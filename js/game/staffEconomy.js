@@ -7,7 +7,10 @@ const HIRE_BASE_COST = { waiter: 100, chef: 100, cleaner: 100, farmer: 150, ranc
 const HIRE_GROWTH = 3; // each additional hire of the same role costs 3x the previous one
 
 export function getHireCost(game, role) {
-  const n = game.staff.filter(s => s.role === role).length;
+  // counts both already-working staff and any of the same role still waiting in the quick
+  // bar to be placed — otherwise hiring a pile without placing them would dodge the ramp
+  const n = game.staff.filter(s => s.role === role).length
+    + game.staffInventory.filter(s => s.role === role).length;
   const base = HIRE_BASE_COST[role] ?? 100;
   return Math.round(base * Math.pow(HIRE_GROWTH, n));
 }

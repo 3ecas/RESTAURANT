@@ -15,16 +15,6 @@ function makeSlot() {
   return { cooking: false, recipe: null, progress: 0, ready: false, reservedBy: null, collectedBy: null, cookMultiplier: 1 };
 }
 
-// most recipes just need "a stove" (the default single-step process, see data/recipes.js),
-// but a multi-step recipe (e.g. Bread's prepCounter -> oven) must reach this exact station
-// type at exactly this point in its process — not any earlier or later station
-function isCurrentStep(carrying, stationType) {
-  const recipe = getRecipe(carrying.recipe);
-  if (!recipe) return false;
-  const process = recipe.process || ['stove'];
-  return process[carrying.step || 0] === stationType;
-}
-
 export function makeStove({ type, name, cost, slotCount, tierMultiplier, image, icon = '🔥', color = '#e0a678' }) {
   return {
     type, name, icon, color, cost, category: 'Appliances', image,
@@ -36,36 +26,6 @@ export function makeStove({ type, name, cost, slotCount, tierMultiplier, image, 
 
     canRemove(obj) { return !obj.slots.some(s => s.cooking); },
     canMove(obj) { return !obj.slots.some(s => s.cooking); },
-
-    interact(obj, ctx) {
-      const { player } = ctx;
-      if (player.carrying && player.carrying.kind === 'ingredient' && isCurrentStep(player.carrying, type)) {
-        const slot = obj.slots.find(s => !s.cooking && !s.ready && !s.reservedBy);
-        if (slot) {
-          slot.cooking = true;
-          slot.recipe = player.carrying.recipe;
-          slot.progress = 0;
-          slot.reservedBy = 'player';
-          slot.cookMultiplier = tierMultiplier; // the stove's own speed still applies even without a chef
-          player.carrying = null;
-          return true;
-        }
-      }
-      if (!player.carrying) {
-        const slot = obj.slots.find(s => s.ready);
-        if (slot) {
-          player.carrying = { kind: 'cooked', recipe: slot.recipe };
-          slot.ready = false;
-          slot.recipe = null;
-          slot.reservedBy = null;
-          slot.collectedBy = null;
-          return true;
-        }
-      }
-      // note: deliberately no "put a cooked dish back on an idle stove" case — see stove.js's
-      // original comment, still applies: the order stand has unlimited capacity
-      return false;
-    },
 
     drawExtra(ctx, obj, px, py, cellSize) {
       const readyCount = obj.slots.filter(s => s.ready).length;

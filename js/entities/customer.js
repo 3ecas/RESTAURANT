@@ -1,4 +1,4 @@
-// A seated (or waiting-at-door) customer: order → wait → eat → pay → leave
+// A seated (or waiting-at-door) customer: order → wait → eat → pay (instant, on the spot) → leave
 
 import { Mover } from './mover.js';
 import { RECIPES, getRecipe, isRecipeUnlocked } from '../data/recipes.js';
@@ -10,14 +10,13 @@ export class Customer extends Mover {
   constructor(x, y) {
     super(x, y);
     this.id = _custId++;
-    this.state = 'walkingToSeat'; // waitingAtDoor, walkingToSeat, thinking, waitingOrder, waitingFood, eating, walkingToPay, leaving, done
+    this.state = 'walkingToSeat'; // waitingAtDoor, walkingToSeat, thinking, waitingOrder, waitingFood, eating, leaving, done
     this.timer = 0;
     this.order = null;
     this.chair = null;
     this.table = null;
     this.claimed = false;
     this.deliveryClaimed = false; // reserved by a waiter who's bringing this exact order
-    this.payBooth = null;
     this.speed = 40;
   }
 
@@ -61,26 +60,12 @@ export class Customer extends Mover {
           this.table.dirty = true;
           this.table.claimedDirty = false;
           this.chair.occupied = null;
-          const booth = world.findObjects('payingBooth')[0];
-          const boothPath = booth ? world.pathToAdjacent(this.gx, this.gy, booth.x, booth.y) : null;
-          if (booth && boothPath) {
-            this.payBooth = booth;
-            this.state = 'walkingToPay';
-            this.setPath(boothPath);
-          } else {
-            this.state = 'leaving';
-            const ec = world.nearestEntranceCell(this.gx, this.gy);
-            const path = world.pathTo(this.gx, this.gy, ec.x, ec.y);
-            this.setPath(path || []);
-          }
-        }
-        break;
-      case 'walkingToPay':
-        if (!this.hasPath) {
+          // paying is instant, on the spot — no booth to walk to. A little "+$X" gold text
+          // pops up over their head and fades out to make the payment feel tangible.
           const recipe = getRecipe(this.order);
-          this.payBooth.collected += recipe.price;
-          // achievements track lifetime totals here, at the moment the customer actually
-          // pays — not when the booth is later collected, which is just a physical pickup
+          game.addMoney(recipe.price);
+          game.spawnFloatingText(this.px, this.py, '+$' + recipe.price, '#ffd700');
+          // achievements track lifetime totals here, at the moment the customer actually pays
           game.stats.customersServed += 1;
           game.stats.totalRevenue += recipe.price;
           this.state = 'leaving';

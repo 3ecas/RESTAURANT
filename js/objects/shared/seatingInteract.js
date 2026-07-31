@@ -1,21 +1,9 @@
 // Shared shape for anything a chair can pair up with to seat a customer: a table, or a
-// counter/wall used as bar seating (see World.chairsForTables / tableOfChair).
+// counter used as bar seating (see World.chairsForTables / tableOfChair). Order-taking
+// and food delivery are handled directly by waiter.js, and cleanup by cleaner.js — this type
+// itself just carries the dirty-plate state they read/write.
 
 import { SCALE } from '../../core/constants.js';
-
-// interacting with the seating surface itself: take orders / deliver food for the whole
-// table, falling back to picking up a dirty plate if nothing else applies
-export function interactTable(table, ctx) {
-  const { game, player } = ctx;
-  if (game.serveTable(table)) return true;
-  if (table.dirty && !player.carrying) {
-    table.dirty = false;
-    table.claimedDirty = false;
-    player.carrying = { kind: 'dirty' };
-    return true;
-  }
-  return false;
-}
 
 function drawDirtyOverlay(ctx, obj, px, py, cellSize) {
   if (!obj.dirty) return;
@@ -30,7 +18,6 @@ export function makeSeatingSurface({ type, name, icon, cost, color, fixedStock, 
     type, name, icon, color, cost, category: 'Furniture', fixedStock, image,
     seatingSurface: true,
     createState(base) { return Object.assign(base, { dirty: false, claimedDirty: false }); },
-    interact(obj, ctx) { return interactTable(obj, ctx); },
     drawExtra(ctx, obj, px, py, cellSize) { drawDirtyOverlay(ctx, obj, px, py, cellSize); },
   };
 }
