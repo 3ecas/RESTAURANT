@@ -1,9 +1,14 @@
 // Grid geometry and shared type-sets used across the whole game
 
-export const COLS = 21;
-export const ROWS = 21;
+// world size — the full buildable field, bigger than what's ever on screen at once
+export const COLS = 36;
+export const ROWS = 30;
 export const CELL = 40;
 export const SCALE = CELL / 32; // grows the fixed-pixel visuals (characters, badges, text) along with the cell size
+
+// the canvas viewport itself is sized dynamically to fill the browser window (see
+// main.js/resizeCanvas), capped at the world's own pixel size — the camera pans within it
+// via right-mouse-drag (see game/input.js) whenever the world is bigger than the window
 
 export const DIRS = [
   { x: 0, y: -1, name: 'up' },

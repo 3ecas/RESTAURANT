@@ -154,7 +154,15 @@ function drawHeldPreview(ctx, game) {
 }
 
 export function render(ctx, canvas, game) {
+  // clear the physical canvas (viewport-sized) before the world-space transform below —
+  // clearRect here isn't affected by the translate since it hasn't been applied yet
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // the world is bigger than the viewport (see core/constants.js) — everything from here
+  // down is drawn in world space, shifted by the camera so only the panned-to window shows
+  ctx.save();
+  ctx.translate(-game.camera.x, -game.camera.y);
+
   drawGrassBackground(ctx, game.world);
   drawFloorTiles(ctx, game.world);
   drawGrid(ctx);
@@ -170,4 +178,6 @@ export function render(ctx, canvas, game) {
   for (const d of drawables) d.draw();
 
   drawHeldPreview(ctx, game);
+
+  ctx.restore();
 }

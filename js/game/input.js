@@ -7,12 +7,15 @@ import { cancelHeldObject } from '../ui/ui.js';
 import { showContextMenu, hideContextMenu } from '../ui/contextMenuUI.js';
 import { refreshStorageUI } from '../ui/hotbarUI.js';
 
-function canvasCellFromEvent(canvas, e) {
+// converts a mouse event to a world grid cell — offsets by the camera's pixel pan (see
+// game/render.js, which translates by the same amount when drawing) so clicks/hover land
+// on whatever's actually visible under the cursor, not just the top-left of the world
+function canvasCellFromEvent(canvas, game, e) {
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;
   const scaleY = canvas.height / rect.height;
-  const mx = (e.clientX - rect.left) * scaleX;
-  const my = (e.clientY - rect.top) * scaleY;
+  const mx = (e.clientX - rect.left) * scaleX + game.camera.x;
+  const my = (e.clientY - rect.top) * scaleY + game.camera.y;
   return { gx: Math.floor(mx / CELL), gy: Math.floor(my / CELL) };
 }
 
@@ -54,15 +57,59 @@ export function setupInput(canvas, game) {
   });
 
   canvas.addEventListener('mousemove', (e) => {
-    const { gx, gy } = canvasCellFromEvent(canvas, e);
+    const { gx, gy } = canvasCellFromEvent(canvas, game, e);
     game.hoverCell = game.world.inBounds(gx, gy) ? { x: gx, y: gy } : null;
   });
   canvas.addEventListener('mouseleave', () => { game.hoverCell = null; });
 
+  // ---- camera panning: hold the right mouse button and drag to scroll the view around
+  // the world (which is bigger than the fixed-size viewport — see core/constants.js). A
+  // right-click that never moves past the drag threshold still opens the context menu
+  // below, so the two don't fight over the same button.
+  const DRAG_THRESHOLD = 4; // px of actual movement before a right-mouse-down counts as a drag, not a click
+  let drag = null; // { startClientX, startClientY, startCamX, startCamY, dragging }
+  let suppressNextContextMenu = false;
+
+  canvas.addEventListener('mousedown', (e) => {
+    if (e.button !== 2) return;
+    drag = {
+      startClientX: e.clientX, startClientY: e.clientY,
+      startCamX: game.camera.x, startCamY: game.camera.y,
+      dragging: false,
+    };
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!drag) return;
+    if (!(e.buttons & 2)) { drag = null; return; } // button already released elsewhere
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const dx = (e.clientX - drag.startClientX) * scaleX;
+    const dy = (e.clientY - drag.startClientY) * scaleY;
+    if (!drag.dragging && Math.hypot(dx, dy) > DRAG_THRESHOLD) drag.dragging = true;
+    if (drag.dragging) {
+      game.camera.x = drag.startCamX - dx;
+      game.camera.y = drag.startCamY - dy;
+      game.clampCamera();
+      canvas.style.cursor = 'grabbing';
+    }
+  });
+
+  window.addEventListener('mouseup', (e) => {
+    if (e.button !== 2 || !drag) return;
+    if (drag.dragging) {
+      suppressNextContextMenu = true;
+      canvas.style.cursor = '';
+    }
+    drag = null;
+  });
+
   canvas.addEventListener('contextmenu', (e) => {
     e.preventDefault();
+    if (suppressNextContextMenu) { suppressNextContextMenu = false; return; }
     if (game.heldObject) return;
-    const { gx, gy } = canvasCellFromEvent(canvas, e);
+    const { gx, gy } = canvasCellFromEvent(canvas, game, e);
     const obj = game.world.cellAt(gx, gy);
     if (!obj) { hideContextMenu(); return; }
     game.contextTarget = obj;
@@ -81,7 +128,7 @@ export function setupInput(canvas, game) {
 
   canvas.addEventListener('click', (e) => {
     if (!document.getElementById('contextMenu').classList.contains('hidden')) return;
-    const { gx, gy } = canvasCellFromEvent(canvas, e);
+    const { gx, gy } = canvasCellFromEvent(canvas, game, e);
     if (!game.world.inBounds(gx, gy)) return;
 
     if (game.heldObject) {

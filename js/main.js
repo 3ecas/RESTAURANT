@@ -7,12 +7,22 @@ import { setupInput } from './game/input.js';
 import { render } from './game/render.js';
 
 const canvas = document.getElementById('gameCanvas');
-canvas.width = COLS * CELL;
-canvas.height = ROWS * CELL;
 const ctx = canvas.getContext('2d');
 ctx.imageSmoothingEnabled = false; // keep pixel-art sprites crisp when scaled to fill a cell
 
 const game = new Game();
+
+// the viewport fills the whole browser window, capped at the world's own pixel size (no
+// point in a canvas bigger than the world it's showing) — re-synced on every resize so
+// the camera clamp (see Game.setViewportSize) always matches what's actually on screen
+function resizeCanvas() {
+  canvas.width = Math.min(window.innerWidth, COLS * CELL);
+  canvas.height = Math.min(window.innerHeight, ROWS * CELL);
+  game.setViewportSize(canvas.width, canvas.height);
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
 initUI(game);
 setupInput(canvas, game);
 

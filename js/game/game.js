@@ -1,7 +1,7 @@
 // The Game class: world/money/inventory state, buy/place/store/sell, staff hire/fire/train,
 // customer spawning, player interaction, and the per-tick simulation update.
 
-import { COLS, ROWS, DIRS } from '../core/constants.js';
+import { COLS, ROWS, CELL, DIRS } from '../core/constants.js';
 import { World } from '../core/world.js';
 import { getObjectType, createObject, ITEM_DEFS, FARM_CROP_TYPES, ANIMAL_TYPES, STOVE_TYPES } from '../objects/registry.js';
 import { tickFarmGrowth } from '../objects/shared/farmCropFactory.js';
@@ -37,6 +37,9 @@ export class Game {
     this.hoverCell = null;
     this.menuOpen = false;
     this.keys = new Set();
+    this.camera = { x: 0, y: 0 }; // pixel offset of the viewport's top-left within the world; panned via right-mouse-drag (see game/input.js)
+    this.viewportW = COLS * CELL; // current canvas size in px — kept in sync by main.js's resize handler (setViewportSize)
+    this.viewportH = ROWS * CELL;
     this.startSpawnCycle(); // first batch of arrivals for this minute
     this.isOpen = true;
     this.staffUIRefresh = 0; // throttles the staff table redraw while training counts down
@@ -117,6 +120,24 @@ export class Game {
     w.place(createObject('table'), 9, 11);
     w.place(createObject('chair'), 8, 11);
     w.place(createObject('chair'), 10, 11);
+  }
+
+  // called by main.js whenever the canvas is resized (the viewport fills the browser
+  // window, capped at the world's own pixel size — see main.js's resizeCanvas)
+  setViewportSize(w, h) {
+    this.viewportW = w;
+    this.viewportH = h;
+    this.clampCamera();
+  }
+
+  // keeps the camera from ever panning past the world's edges — the world can be bigger
+  // than the current viewport (see setViewportSize above), so this is what makes the map
+  // border (drawn in render.js) an actual hard boundary rather than just a visual line
+  clampCamera() {
+    const maxX = Math.max(0, COLS * CELL - this.viewportW);
+    const maxY = Math.max(0, ROWS * CELL - this.viewportH);
+    this.camera.x = Math.min(Math.max(this.camera.x, 0), maxX);
+    this.camera.y = Math.min(Math.max(this.camera.y, 0), maxY);
   }
 
   addMoney(amount) {
