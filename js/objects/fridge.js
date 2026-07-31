@@ -17,7 +17,7 @@ export const fridge = {
       const stand = world.findObjects('orderStand').find(s => s.pending.length > 0);
       if (!stand) return false;
       const order = stand.pending.shift();
-      player.carrying = { kind: 'ingredient', recipe: order.recipe };
+      player.carrying = { kind: 'ingredient', recipe: order.recipe, step: 0 };
       return true;
     }
     if (player.carrying.kind === 'ingredient') {

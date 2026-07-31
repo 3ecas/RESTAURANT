@@ -45,7 +45,7 @@ export class Game {
     this.ingredients = {
       wheat: 0, shrimp: 0, chicken: 0, tomato: 0, cabbage: 0, corn: 0, potato: 0,
       carrot: 0, onion: 0, pumpkin: 0, salmon: 0, milk: 0,
-      cod: 0, tuna: 0, egg: 0, beef: 0,
+      cod: 0, tuna: 0, egg: 0, beef: 0, water: 0,
     }; // ingredient stock, consumed by recipes that need them — starts empty, so only rice (which needs nothing) is ever ordered until you have some
     this.shopStock = {}; // how many of each shop item are currently available to buy
     this.shopRefreshTimer = SHOP_REFRESH_INTERVAL;

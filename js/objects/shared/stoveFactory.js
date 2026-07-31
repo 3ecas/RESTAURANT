@@ -1,7 +1,12 @@
-// Shared shape for every stove tier — cooks `slotCount` orders concurrently instead of just
-// one, and applies its own `tierMultiplier` on top of whatever chef cooked it (see
-// entities/staffRoles/chef.js). A slot's cookMultiplier is baked in once when cooking starts
-// so it keeps applying even after the chef walks off (see tickCooking below).
+// Shared shape for every stove tier (and the Oven, see objects/oven.js) — cooks `slotCount`
+// orders concurrently instead of just one, and applies its own `tierMultiplier` on top of
+// whatever chef cooked it (see entities/staffRoles/chef.js). A slot's cookMultiplier is baked
+// in once when cooking starts so it keeps applying even after the chef walks off (see
+// tickCooking below). NOTE: a cook station is always treated as the *last* step of a
+// recipe's process once it accepts an ingredient — collecting a ready slot always hands back
+// a finished `cooked` item, never an intermediate one. That's fine for every current recipe
+// (stove/oven only ever sit at the end of the chain) but would need extending if a future
+// recipe ever needed one mid-process.
 
 import { getRecipe } from '../../data/recipes.js';
 import { progressBar, readyCheckmark, badge } from '../../game/drawHelpers.js';
@@ -10,9 +15,19 @@ function makeSlot() {
   return { cooking: false, recipe: null, progress: 0, ready: false, reservedBy: null, collectedBy: null, cookMultiplier: 1 };
 }
 
-export function makeStove({ type, name, cost, slotCount, tierMultiplier, image }) {
+// most recipes just need "a stove" (the default single-step process, see data/recipes.js),
+// but a multi-step recipe (e.g. Bread's prepCounter -> oven) must reach this exact station
+// type at exactly this point in its process — not any earlier or later station
+function isCurrentStep(carrying, stationType) {
+  const recipe = getRecipe(carrying.recipe);
+  if (!recipe) return false;
+  const process = recipe.process || ['stove'];
+  return process[carrying.step || 0] === stationType;
+}
+
+export function makeStove({ type, name, cost, slotCount, tierMultiplier, image, icon = '🔥', color = '#e0a678' }) {
   return {
-    type, name, icon: '🔥', color: '#e0a678', cost, category: 'Appliances', image,
+    type, name, icon, color, cost, category: 'Appliances', image,
     isStove: true, slotCount, tierMultiplier,
 
     createState(base) {
@@ -24,7 +39,7 @@ export function makeStove({ type, name, cost, slotCount, tierMultiplier, image }
 
     interact(obj, ctx) {
       const { player } = ctx;
-      if (player.carrying && player.carrying.kind === 'ingredient') {
+      if (player.carrying && player.carrying.kind === 'ingredient' && isCurrentStep(player.carrying, type)) {
         const slot = obj.slots.find(s => !s.cooking && !s.ready && !s.reservedBy);
         if (slot) {
           slot.cooking = true;

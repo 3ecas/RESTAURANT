@@ -9,6 +9,9 @@ import { fridge } from './fridge.js';
 import { stove } from './stove.js';
 import { stoveII } from './stoveII.js';
 import { stoveIII } from './stoveIII.js';
+import { oven } from './oven.js';
+import { waterTap } from './waterTap.js';
+import { prepCounter } from './prepCounter.js';
 import { orderStand } from './orderStand.js';
 import { sink } from './sink.js';
 import { payingBooth } from './payingBooth.js';
@@ -38,7 +41,7 @@ import { oakChair } from './oakChair.js';
 import { pottedPlant } from './pottedPlant.js';
 
 export const OBJECT_TYPES = [
-  fridge, stove, stoveII, stoveIII, orderStand, sink, payingBooth,
+  fridge, stove, stoveII, stoveIII, oven, waterTap, prepCounter, orderStand, sink, payingBooth,
   table, chair, wall, door,
   roundTable, oakChair, pottedPlant,
   farmPlot, tomatoFarm, cabbageFarm, cornFarm, potatoFarm, carrotFarm, onionFarm, pumpkinFarm,

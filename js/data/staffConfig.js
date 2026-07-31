@@ -8,7 +8,6 @@ export const STAFF_BASE_SPEED = 48;
 export const STAFF_MAX_LEVEL = Infinity;
 
 const FAST_ROLES = new Set(['waiter', 'cleaner']);
-const WORK_ROLES = new Set(['chef', 'rancher', 'fisherman']);
 
 // +8%/level for waiter/cleaner, +6%/level for the rest — roughly tracks the old fixed
 // 5-level tables at level 5, then keeps climbing instead of flatlining there
@@ -17,11 +16,15 @@ export function speedMultiplier(role, level) {
   return 1 + rate * level;
 }
 
-// chef: stove cook speed. rancher: animal-shack process speed. fisherman: catch speed.
+// chef: stove/oven cook speed. rancher: animal-shack process speed. fisherman: catch speed.
 // baked into whatever they're working on at the moment it starts (see chef.js/rancher.js/
-// fisherman.js), not read continuously.
+// fisherman.js), not read continuously. A fresh chef deliberately starts slower than doing
+// it yourself (< 1x) — hiring one isn't an instant win — and only overtakes manual play
+// after a few levels of training; rancher/fisherman keep the old always-at-or-above-1x curve.
 export function workMultiplier(role, level) {
-  return WORK_ROLES.has(role) ? 1 + 0.06 * level : 1;
+  if (role === 'chef') return 0.75 + 0.07 * level;
+  if (role === 'rancher' || role === 'fisherman') return 1 + 0.06 * level;
+  return 1;
 }
 
 // how many items they carry in one trip before heading back. Farmer's cap still delivers

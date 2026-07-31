@@ -2,10 +2,14 @@
 // down until they find one whose ingredients are all available; rice needs none, so it's
 // always the floor. Cooking never costs money — customers only ever pay the price.
 // `ingredients` is a list of { name, qty } — combo dishes just list more than one.
+// `process` is the ordered list of station types an order visits after the fridge and
+// before the order stand (default, if omitted: a single generic ['stove']) — see
+// objects/shared/stoveFactory.js / prepStationFactory.js. Bread is the pilot for this:
+// wheat+water get fetched together, mixed at the Prep Counter, then baked in the Oven.
 
 export const RECIPES = [
   { id: 'roastChicken', name: 'Roast Chicken', icon: '🍗', price: 15, cookTime: 9000, ingredients: [{ name: 'chicken', qty: 1 }], enabled: true },
-  { id: 'bread', name: 'Bread', icon: '🍞', price: 8, cookTime: 10000, ingredients: [{ name: 'wheat', qty: 1 }], enabled: true },
+  { id: 'bread', name: 'Bread', icon: '🍞', price: 12, cookTime: 10000, ingredients: [{ name: 'wheat', qty: 1 }, { name: 'water', qty: 1 }], process: ['prepCounter', 'oven'], enabled: true },
   { id: 'rice', name: 'Rice', icon: '🍚', price: 5, cookTime: 8000, ingredients: [], enabled: true },
   { id: 'tomatoSoup', name: 'Tomato Soup', icon: '🍲', price: 20, cookTime: 35000, ingredients: [{ name: 'tomato', qty: 1 }], enabled: true },
   { id: 'salad', name: 'Salad', icon: '🥗', price: 22, cookTime: 18000, ingredients: [{ name: 'cabbage', qty: 1 }], enabled: true },
