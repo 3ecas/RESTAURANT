@@ -1,4 +1,4 @@
-// The Shop tab's item palette, grouped by category
+// The Shop tab's item palette — one sub-tab per category instead of one long scrolling list
 
 import { ITEM_DEFS } from '../objects/registry.js';
 import { CATEGORY_ORDER } from './itemCategories.js';
@@ -18,35 +18,68 @@ function buildPaletteItem(game, def) {
   return div;
 }
 
-function buildPaletteCategory(game, label, defs) {
-  const section = document.createElement('div');
-  section.className = 'hotbarCategory';
-  const header = document.createElement('div');
-  header.className = 'hotbarCategoryHeader';
-  header.textContent = label;
-  section.appendChild(header);
+function buildPaletteGrid(game, defs) {
   const grid = document.createElement('div');
   grid.className = 'paletteGrid';
   defs.forEach(def => grid.appendChild(buildPaletteItem(game, def)));
-  section.appendChild(grid);
-  return section;
+  return grid;
 }
 
-// an item can opt into requiring an unlock (e.g. Stove II/III via an achievement reward,
-// see objects/stoveII.js) — until then it simply doesn't show up here at all
+// an item can opt into requiring an unlock (e.g. Stove II/III, Sink II/III — see the
+// requiresUnlock flag on objects/*.js, granted by restaurant level-ups, see data/levels.js)
+// — until then it simply doesn't show up here at all
 function isVisible(game, def) {
-  return !def.requiresUnlock || game.unlockedStoveTiers.has(def.type);
+  return !def.requiresUnlock || game.unlockedObjectTypes.has(def.type);
 }
 
-// grouped exactly like the storage quick bar's expanded view — same categories, same order
+// renderPalette reruns on every purchase and every shop restock (see statusUI.js's
+// updateMoneyUI / game.js's refreshShopStock), which would otherwise snap the shop back to
+// the first category mid-browse — this remembers the selection across those re-renders
+let activeCategory = null;
+
+// same categories/order as the storage quick bar's expanded view, just shown as sub-tabs
+// (one open category at a time) instead of stacked sections in one scrolling list
 export function renderPalette(game) {
   const el = document.getElementById('palette');
   el.innerHTML = '';
   const visible = ITEM_DEFS.filter(d => isVisible(game, d));
-  CATEGORY_ORDER.forEach(cat => {
-    const defs = visible.filter(d => (d.category || 'Other') === cat);
-    if (defs.length > 0) el.appendChild(buildPaletteCategory(game, cat, defs));
-  });
+
+  const groups = CATEGORY_ORDER
+    .map(cat => ({ cat, defs: visible.filter(d => (d.category || 'Other') === cat) }))
+    .filter(g => g.defs.length > 0);
   const leftover = visible.filter(d => !d.category);
-  if (leftover.length > 0) el.appendChild(buildPaletteCategory(game, 'Other', leftover));
+  if (leftover.length > 0) groups.push({ cat: 'Other', defs: leftover });
+
+  if (groups.length === 0) {
+    el.innerHTML = '<div class="hotbarExpandEmpty">Nothing available right now.</div>';
+    return;
+  }
+  if (!groups.some(g => g.cat === activeCategory)) activeCategory = groups[0].cat;
+
+  const tabBar = document.createElement('div');
+  tabBar.className = 'subTabBar';
+  const content = document.createElement('div');
+
+  groups.forEach(g => {
+    const btn = document.createElement('button');
+    btn.className = 'subTabBtn' + (g.cat === activeCategory ? ' active' : '');
+    btn.textContent = g.cat;
+    btn.addEventListener('click', () => { activeCategory = g.cat; renderPalette(game); });
+    tabBar.appendChild(btn);
+    if (g.cat === activeCategory) content.appendChild(buildPaletteGrid(game, g.defs));
+  });
+
+  el.appendChild(tabBar);
+  el.appendChild(content);
+}
+
+// game.shopRefreshTimer counts down continuously (see Game.update) — this just formats
+// whatever it's currently at. Called on a short throttle, not every frame (see game.js).
+export function updateShopRefreshCountdown(game) {
+  const el = document.getElementById('shopRefreshCountdown');
+  if (!el) return;
+  const totalSec = Math.max(0, Math.ceil(game.shopRefreshTimer / 1000));
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  el.textContent = `⏱ Next restock in ${min}:${String(sec).padStart(2, '0')}`;
 }

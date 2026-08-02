@@ -1,6 +1,7 @@
-// Achievements tab: completed milestones plus the one currently in progress. No experience
-// points here — each one is a deadline (serve N guests, earn $N) that unlocks real content
-// the moment it lands (see data/achievements.js / game/achievements.js).
+// Achievements tab: completed milestones plus the one currently in progress. A separate,
+// cash-only bonus chain — each one is a deadline (serve N guests, earn $N) that pays out the
+// moment it lands (see data/achievements.js / game/achievements.js). Content unlocks
+// (appliances, recipes) come from restaurant level instead — see the Levels tab.
 
 import { ACHIEVEMENTS } from '../data/achievements.js';
 import { currentAchievement } from '../game/achievements.js';

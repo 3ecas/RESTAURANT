@@ -32,6 +32,14 @@ export class World {
     return true;
   }
 
+  // 1-3 separate small fishing ponds instead of one big lake — each is its own independent
+  // generateWater call, so they never merge into a single blob (every call only ever grows
+  // into cells that aren't already water, including water from an earlier call this same pass)
+  generateWaterPlots() {
+    const count = 1 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < count; i++) this.generateWater(6);
+  }
+
   // grows a single irregular pond (capped at maxSize cells) on empty ground, via random
   // blob growth from one seed cell — every water cell always touches another one.
   // always confined to the top band of the map so water reliably appears along the top edge.
@@ -70,7 +78,9 @@ export class World {
     for (const c of blob) this.water.add(c.x + ',' + c.y);
   }
 
-  // the entrance is just the placed 'door' object (2x1) — no door placed means no entrance
+  // the entrance is the first placed 'door' object found — no door placed means no entrance.
+  // A second door (see objects/door.js — now buyable) is just a walkable gap, not an
+  // additional spawn point; this getter never picks up more than one.
   get door() {
     return this.findObjects('door')[0] || null;
   }
@@ -109,7 +119,7 @@ export class World {
   }
 
   // whether `type` can be placed at (x,y) — most types just need an empty buildable cell,
-  // but a type can override this (see objects/door.js, which needs 2 cells)
+  // but a type can define its own `canPlace(world, x, y)` hook for anything more specific
   canPlace(type, x, y) {
     const t = getObjectType(type);
     if (t && t.canPlace) return t.canPlace(this, x, y);

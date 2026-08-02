@@ -4,7 +4,6 @@ import { Mover } from './mover.js';
 import { NAMES, STAFF_BASE_SPEED, STAFF_MAX_LEVEL, speedMultiplier, workMultiplier, carryCapacity as carryCapacityFor } from '../data/staffConfig.js';
 import { updateWaiter } from './staffRoles/waiter.js';
 import { updateChef } from './staffRoles/chef.js';
-import { updateCleaner } from './staffRoles/cleaner.js';
 import { updateFarmer } from './staffRoles/farmer.js';
 import { updateFisherman } from './staffRoles/fisherman.js';
 import { updateRancher } from './staffRoles/rancher.js';
@@ -15,14 +14,14 @@ export class StaffMember extends Mover {
   constructor(x, y, role) {
     super(x, y);
     this.id = _staffId++;
-    this.role = role; // waiter, chef, cleaner, farmer, rancher, fisherman
+    this.role = role; // waiter, chef, farmer, rancher, fisherman
     this.name = NAMES[Math.floor(Math.random() * NAMES.length)] + ' #' + this.id;
     this.phase = 'idle';
     this.busyTimer = 0;
     this.task = {};
     this.level = 1;
     this.training = null; // { remaining, total } ms, while leveling up
-    this.carryItems = []; // waiter/cleaner: batch of items currently carried
+    this.carryItems = []; // waiter: batch of items currently carried (dishes to deliver, or dirty plates to bus)
     this.applyLevelStats();
   }
 
@@ -56,7 +55,6 @@ export class StaffMember extends Mover {
     this.stepMove(dt);
     if (this.role === 'waiter') updateWaiter(this, dt, world, game);
     else if (this.role === 'chef') updateChef(this, dt, world, game);
-    else if (this.role === 'cleaner') updateCleaner(this, dt, world, game);
     else if (this.role === 'farmer') updateFarmer(this, dt, world, game);
     else if (this.role === 'fisherman') updateFisherman(this, dt, world, game);
     else if (this.role === 'rancher') updateRancher(this, dt, world, game);

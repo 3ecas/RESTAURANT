@@ -7,7 +7,9 @@
 </head>
 <body>
   <div id="app">
-    <div id="moneyBox">💰 <span id="moneyVal">0</span></div>
+    <div id="restaurantStatusBar">
+      <button id="toggleOpenBtn">🟢 Open</button>
+    </div>
 
     <div id="ingredientsBox">
       <div class="cornerBoxHeader">📦 Ingredients</div>
@@ -28,6 +30,26 @@
       <div id="hotbarExpandBody"></div>
     </div>
 
+    <div id="topLeftHud">
+      <div id="moneyBox">💰 <span id="moneyVal">0</span></div>
+
+      <div id="xpBar">
+        <div class="xpBarHeader">⭐ Level <span id="xpBarLevel">1</span></div>
+        <div class="xpBarTrack"><div id="xpBarFill" class="xpBarFill" style="width:0%"></div></div>
+        <div id="xpBarText" class="xpBarText"></div>
+      </div>
+
+      <div class="menuHeader">
+        <button class="tabBtn active" data-tab="shop">🛒 Shop</button>
+        <button class="tabBtn" data-tab="levels">⭐ Levels</button>
+        <button class="tabBtn" data-tab="recipes">📖 Recipes</button>
+        <button class="tabBtn" data-tab="staff">👥 Staff</button>
+        <button class="tabBtn" data-tab="achievements">🏆 Achievements</button>
+        <button class="tabBtn" data-tab="settings">⚙️ Settings</button>
+        <button class="tabBtn" data-tab="tutorial">🎓 Tutorial</button>
+      </div>
+    </div>
+
     <div id="hotbar">
       <button id="hotbarExpandBtn" title="Show all storage">▲</button>
       <div id="hotbarSlots"></div>
@@ -43,21 +65,18 @@
     </div>
 
     <div id="menu" class="hidden">
-      <div class="menuHeader">
-        <button class="tabBtn active" data-tab="shop">🛒 Shop</button>
-        <button class="tabBtn" data-tab="recipes">📖 Recipes</button>
-        <button class="tabBtn" data-tab="staff">👥 Staff</button>
-        <button class="tabBtn" data-tab="achievements">🏆 Achievements</button>
-        <button class="tabBtn" data-tab="settings">⚙️ Settings</button>
-        <button class="tabBtn" data-tab="tutorial">🎓 Tutorial</button>
-      </div>
-
       <div class="menuContent">
         <button id="closeMenu">✕</button>
 
         <div id="tab-shop" class="tabPanel active">
-          <p class="tabHelp">Buy an item — it goes straight to storage. Place it from the quick bar (bottom center) or its expanded view. Grouped the same way here. Stock is limited and refreshes every 5 minutes, so not everything is always available.</p>
+          <p class="tabHelp">Buy an item — it goes straight to storage. Place it from the quick bar (bottom center) or its expanded view. Grouped the same way here. Stock is limited and refreshes on a timer, so not everything is always available.</p>
+          <div id="shopRefreshCountdown" class="shopRefreshCountdown"></div>
           <div id="palette"></div>
+        </div>
+
+        <div id="tab-levels" class="tabPanel">
+          <p class="tabHelp">Your restaurant's overall progression — driven purely by lifetime revenue, 100 levels deep. This is where appliances, recipes, and furniture actually unlock (not the Achievements tab, which is just cash bonuses). Some levels pay out money or free ingredients instead of unlocking anything.</p>
+          <div id="levelsList"></div>
         </div>
 
         <div id="tab-recipes" class="tabPanel">
@@ -70,23 +89,17 @@
 
         <div id="tab-staff" class="tabPanel">
           <p class="tabHelp">Hire staff to automate the restaurant. Each locked slot shows the price to hire the next one — it climbs steeply per role. Hiring doesn't put them to work yet: they wait in the <strong>quick bar</strong> (bottom center) until you click their slot and click a tile to place them — only then do they start taking orders, cooking, delivering food, or cleaning up.</p>
-          <p class="tabHelp">Train staff to level up — no limit: chefs move and cook faster, waiters and cleaners move faster and carry more plates per trip. Cost and time keep climbing each level, so it gets expensive fast.</p>
+          <p class="tabHelp">Train staff to level up — no limit: chefs move and cook faster, waiters move faster and carry more plates per trip. Cost and time keep climbing each level, so it gets expensive fast. The 🎓 train and ✕ fire controls are right on each staff member's own cell below.</p>
           <div id="staffPanels"></div>
-          <table id="staffTable">
-            <thead><tr><th>Name</th><th>Role</th><th>Level</th><th></th><th></th></tr></thead>
-            <tbody></tbody>
-          </table>
         </div>
 
         <div id="tab-achievements" class="tabPanel">
-          <p class="tabHelp">No experience points here — these are deadlines to fulfill. Only one is active at a time; completing it unlocks a real reward (a faster stove, a new recipe, cash) and moves straight to the next one. They get harder to reach as you go.</p>
+          <p class="tabHelp">A separate cash-bonus chain — completely apart from your restaurant level. Only one is active at a time; completing it pays out and moves straight to the next one. They get harder to reach as you go. For appliance/recipe unlocks, see the <strong>Levels</strong> tab instead.</p>
           <div id="achievementsList"></div>
         </div>
 
         <div id="tab-settings" class="tabPanel">
-          <p class="tabHelp">Restaurant-wide settings.</p>
-          <button id="toggleOpenBtn">🔴 Close Restaurant</button>
-          <p class="tabHelp" id="openStatusText"></p>
+          <p class="tabHelp">Restaurant-wide settings. The Open/Close control now lives in the status bar at the top center of the screen, always visible.</p>
         </div>
 
         <div id="tab-tutorial" class="tabPanel">
@@ -102,13 +115,13 @@
           </ul>
           <p class="tabHelp"><strong>Getting started</strong></p>
           <ul class="tutorialList">
-            <li>You start with just enough gold to hire a <strong>Chef</strong>, a <strong>Waiter</strong>, and a <strong>Cleaner</strong> — hire all three from the <strong>Staff</strong> tab, since nothing gets cooked, served, or cleaned without them</li>
-            <li>Hired staff wait in the <strong>quick bar</strong> until placed — click their slot there, then click an open tile in the room to put them to work; they'll keep refilling into your hand if you bought more than one</li>
-            <li>You start in a small enclosed room with a walled-off kitchen nook (Fridge, Stove, Sink, Order Stand) and a 3-seat Counter bar — expand from there with items bought from the <strong>Shop</strong> tab</li>
+            <li>You start on an empty plot with nothing built yet — a free starting kit is waiting in the <strong>quick bar</strong> (bottom center) instead: a Chef, a Waiter, a Fridge, a Stove, a Sink, an Order Stand, 30 Walls, 4 Window Walls, a Door, a Table, and 2 Chairs. Click a slot to pick it up, then click tiles to build your own room — buy more from the <strong>Shop</strong> tab once you outgrow the kit</li>
+            <li>No customers will show up until a <strong>Door</strong> is placed somewhere — that's the only entrance they path through</li>
+            <li>Hired staff (including your starting Chef and Waiter) wait in the quick bar until placed — click their slot there, then click an open tile to put them to work; they'll keep refilling into your hand if there's more than one</li>
             <li>Customers pay automatically the moment they finish eating — watch for the little gold "+$" that pops up over their head</li>
-            <li>Waiters take orders and deliver food, chefs fetch ingredients and cook, cleaners clear dirty tables — it all happens on its own once they're placed</li>
+            <li>Waiters take orders, deliver food, and bus dirty tables; chefs fetch ingredients from the <strong>Fridge</strong> and cook them at a <strong>Stove</strong> — it all happens on its own once they're placed, as long as the ingredient's in stock</li>
             <li>A <strong>Counter</strong> works as bar seating too — put a chair next to one and customers will sit and eat right there, no table needed</li>
-            <li>Grow crops (wheat, tomato, cabbage, corn, potato, carrot, onion, pumpkin) on their matching plot — a <strong>Farmer</strong> plants and harvests them automatically; any <strong>Fridge</strong> shows your current stock</li>
+            <li>Grow crops (wheat, tomato, cabbage, corn, potato, carrot, onion, pumpkin) on their matching plot — a <strong>Farmer</strong> plants and harvests them automatically; any <strong>Fridge</strong> shows your current stock. Water tops itself up automatically from any placed <strong>Sink</strong></li>
             <li><strong>Fishermen</strong> catch fish near water on their own — usually shrimp, sometimes a rarer salmon — and freeze it at a <strong>Freezer</strong>, no extra prep needed</li>
             <li><strong>Ranchers</strong> feed Chickens and Cows from their matching feeder (stocked with wheat from a fridge) and process grown animals at the <strong>Animal Shack</strong></li>
             <li>Train staff from the <strong>Staff</strong> tab to level them up — faster, more capable versions of the same role</li>

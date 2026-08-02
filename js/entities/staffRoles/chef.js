@@ -1,30 +1,38 @@
-// Chef: fetches the next pending order's ingredient from a fridge, then walks it through
-// whatever stations its recipe's `process` requires (see data/recipes.js — most recipes are
-// just ['stove'], but a multi-step one like Bread is ['prepCounter', 'oven']), collecting it
-// once the final station's done. Generalized over STOVE_TYPES (see objects/registry.js) the
-// same way farmer.js generalizes over FARM_CROP_TYPES — adding a new stove tier, or a new
-// multi-step recipe, needs no changes here.
+// Chef: fetches the next pending order's ingredient from a fridge, then cooks it at a stove.
+// Generalized over STOVE_TYPES (see objects/registry.js) so adding a new stove tier needs no
+// changes here.
 
 import { getRecipe } from '../../data/recipes.js';
 import { STOVE_TYPES, getObjectType } from '../../objects/registry.js';
 
+// highest tierMultiplier (fastest cook speed) first, so a chef choosing where to cook always
+// tries the best available stove before falling back to a slower one — otherwise a chef would
+// just take whichever stove happens to come first in placement order, base tier included
 function allStoves(world) {
-  return STOVE_TYPES.flatMap(t => world.findObjects(t.type));
+  return STOVE_TYPES
+    .flatMap(t => world.findObjects(t.type))
+    .sort((a, b) => (getObjectType(b.type).tierMultiplier || 1) - (getObjectType(a.type).tierMultiplier || 1));
 }
 
-function processOf(recipe) {
-  return recipe.process || ['stove'];
+// not cooking, not reserved by another chef already walking an order over, and not sitting
+// on an already-finished dish nobody's collected yet
+function isOpenSlot(slot) {
+  return !slot.reservedBy && !slot.cooking && !slot.ready;
+}
+
+function hasOpenSlot(world) {
+  return allStoves(world).some(stove => stove.slots.some(isOpenSlot));
 }
 
 // by the time an order reaches `pending`, the customer already reserved its ingredients
 // (see Customer 'thinking') — so the chef doesn't need to re-check availability here, just
-// fetch it from whichever fridge is closest (and reachable) and carry it through its
-// process. Once it's cooking the chef's job there is done — they don't stand around
-// waiting; they (or another idle chef) collect it once it's ready.
+// fetch it from whichever fridge is closest (and reachable). Once it's cooking the chef's
+// job there is done — they don't stand around waiting; they (or another idle chef) collect
+// it once it's ready.
 export function updateChef(staff, dt, world, game) {
   if (staff.phase === 'idle') {
-    // priority 1: collect a final station's slot that finished cooking while this chef was
-    // off doing something else — otherwise a finished dish could sit there forever uncollected
+    // priority 1: collect a slot that finished cooking while this chef was off doing
+    // something else — otherwise a finished dish could sit there forever uncollected
     for (const stove of allStoves(world)) {
       const slotIndex = stove.slots.findIndex(s => s.ready && !s.collectedBy);
       if (slotIndex !== -1) {
@@ -39,45 +47,28 @@ export function updateChef(staff, dt, world, game) {
       }
     }
 
-    // priority 2: an order already in hand — walk it to whatever its process needs next
+    // priority 2: an ingredient already in hand — walk it to an open stove slot
     if (staff.carrying && staff.carrying.kind === 'ingredient') {
-      const recipe = getRecipe(staff.carrying.recipe);
-      const process = processOf(recipe);
-      const step = staff.carrying.step || 0;
-      const stationType = process[step];
-      const isFinal = step === process.length - 1;
-
-      if (isFinal) {
-        for (const stove of world.findObjects(stationType)) {
-          const slotIndex = stove.slots.findIndex(s => !s.reservedBy && !s.cooking && !s.ready);
-          if (slotIndex !== -1) {
-            const path = world.pathToAdjacent(staff.gx, staff.gy, stove.x, stove.y);
-            if (path) {
-              stove.slots[slotIndex].reservedBy = staff;
-              staff.task = { stove, slotIndex, recipe };
-              staff.setPath(path);
-              staff.phase = 'toFinalStation';
-            }
-            return;
-          }
-        }
-      } else {
-        // a prep station (Water Tap, Prep Counter, ...) is stateless and instant — no slot
-        // to reserve, just walk to the nearest reachable one
-        const station = world.nearestReachableObject(stationType, staff.gx, staff.gy);
-        if (station) {
-          const path = world.pathToAdjacent(staff.gx, staff.gy, station.x, station.y);
+      for (const stove of allStoves(world)) {
+        const slotIndex = stove.slots.findIndex(isOpenSlot);
+        if (slotIndex !== -1) {
+          const path = world.pathToAdjacent(staff.gx, staff.gy, stove.x, stove.y);
           if (path) {
-            staff.task = { station };
+            stove.slots[slotIndex].reservedBy = staff;
+            staff.task = { stove, slotIndex, recipe: getRecipe(staff.carrying.recipe) };
             staff.setPath(path);
-            staff.phase = 'toPrepStation';
+            staff.phase = 'toStove';
           }
+          return;
         }
       }
-      return;
+      return; // every stove's full — just keep holding it and recheck next tick
     }
 
-    // priority 3: start a brand-new pending order — fetch its ingredients from the fridge
+    // priority 3: start a brand-new pending order — but only if a stove could actually take
+    // it once fetched. Otherwise this (or another idle chef) would grab a fridge trip for
+    // nothing and end up standing around holding an ingredient with nowhere to cook it.
+    if (!hasOpenSlot(world)) return;
     const stand = world.findObjects('orderStand').find(s => s.pending.length > 0);
     if (stand) {
       const order = stand.pending[0];
@@ -99,18 +90,11 @@ export function updateChef(staff, dt, world, game) {
     }
   } else if (staff.phase === 'toFridge') {
     if (!staff.hasPath) {
-      staff.carrying = { kind: 'ingredient', recipe: staff.task.order.recipe, step: 0 };
+      staff.carrying = { kind: 'ingredient', recipe: staff.task.order.recipe };
       staff.task = {};
-      staff.phase = 'idle'; // re-enter idle so priority 2 routes it to its first station
+      staff.phase = 'idle'; // re-enter idle so priority 2 routes it to a stove
     }
-  } else if (staff.phase === 'toPrepStation') {
-    if (!staff.hasPath) {
-      // instant hand-off — prep stations are stateless, just a checkpoint in the process
-      staff.carrying.step = (staff.carrying.step || 0) + 1;
-      staff.task = {};
-      staff.phase = 'idle';
-    }
-  } else if (staff.phase === 'toFinalStation') {
+  } else if (staff.phase === 'toStove') {
     if (!staff.hasPath) {
       const { stove, slotIndex, recipe } = staff.task;
       const slot = stove.slots[slotIndex];

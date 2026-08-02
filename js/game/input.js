@@ -139,7 +139,9 @@ export function setupInput(canvas, game) {
     }
     if (game.world.canPlace(game.heldObject.type, gx, gy)) {
       const placedType = game.heldObject.type;
+      const placedObj = game.heldObject;
       game.world.place(game.heldObject, gx, gy);
+      if (placedType === 'beehive') game.spawnBeesForHive(placedObj);
       continuePlacingFromStack(game, placedType);
     }
   });

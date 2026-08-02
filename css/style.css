@@ -19,10 +19,6 @@ html, body {
 }
 
 #moneyBox {
-  position: fixed;
-  left: 16px;
-  top: 16px;
-  z-index: 40;
   background: #3b3327;
   border: 2px solid #5c4d38;
   border-radius: 8px;
@@ -32,10 +28,51 @@ html, body {
   font-size: 18px;
 }
 
-#ingredientsBox {
+#restaurantStatusBar {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+}
+
+/* the button itself carries the state — green while open, red while closed (js/ui/statusUI.js) */
+#toggleOpenBtn.statusOpen { background: #2d6a30; border-color: #4caf50; color: #eafbe7; }
+#toggleOpenBtn.statusOpen:hover { background: #37812f; }
+#toggleOpenBtn.statusClosed { background: #6b2b2b; border-color: #c0392b; color: #ffe0e0; }
+#toggleOpenBtn.statusClosed:hover { background: #7a3232; }
+
+/* top-left HUD cluster: money, then the always-visible XP bar, then the always-visible
+   horizontal tab strip (.menuHeader, moved out of #menu so it's reachable without pressing E) */
+#topLeftHud {
   position: fixed;
   left: 16px;
-  top: 64px;
+  top: 16px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/* always-visible restaurant-level progress (js/ui/statusUI.js's updateXpBarUI) — same
+   progress-within-current-level math as the Levels tab (data/levels.js's levelProgress) */
+#xpBar {
+  background: #3b3327;
+  border: 2px solid #5c4d38;
+  border-radius: 8px;
+  padding: 8px 14px;
+  width: 180px;
+}
+.xpBarHeader { font-weight: bold; color: #ffd76b; font-size: 13px; margin-bottom: 5px; }
+.xpBarTrack { height: 10px; background: #2a2a2a; border-radius: 5px; overflow: hidden; }
+.xpBarFill { height: 100%; background: #ffd76b; }
+.xpBarText { font-size: 10px; color: #cfc6b8; margin-top: 4px; }
+
+#ingredientsBox {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
   z-index: 40;
   width: 160px;
   background: #2f2a22;
@@ -80,6 +117,12 @@ canvas {
   display: block;
   background: #5b4f3a;
   cursor: crosshair;
+  /* ctx.imageSmoothingEnabled=false (see main.js) only keeps drawImage crisp inside the canvas's
+     own bitmap — on a display with devicePixelRatio != 1 (most Windows scaling settings), the
+     browser separately smooth-scales that bitmap onto the screen unless told not to, which is
+     where sprites go soft even though the canvas content itself is pixel-perfect. */
+  image-rendering: crisp-edges; /* fallback: overwritten below in any browser that understands `pixelated` */
+  image-rendering: pixelated;
 }
 
 #contextMenu {
@@ -126,38 +169,39 @@ canvas {
 
 #menu.hidden { display: none; }
 
-/* sidebar: tabs listed vertically on the left */
+/* vertical tab strip, docked below #xpBar inside #topLeftHud — always visible, clicking
+   a tab both switches the active panel and opens #menu (see the .tabBtn handler in ui.js) */
 .menuHeader {
   display: flex;
   flex-direction: column;
+  gap: 4px;
   background: #1f1b16;
-  border-right: 2px solid #8a6b3f;
-  width: 150px;
-  flex-shrink: 0;
-  overflow-y: auto;
+  border: 2px solid #8a6b3f;
+  border-radius: 8px;
+  padding: 6px;
+  width: 180px;
 }
 
 .tabBtn {
   flex: none;
-  background: none;
-  border: none;
-  border-left: 3px solid transparent;
-  border-bottom: 1px solid #33291d;
+  background: #2a2419;
+  border: 1px solid #4a3d28;
+  border-radius: 6px;
   color: #d8c9ab;
   text-align: left;
-  padding: 12px 14px;
-  font-size: 13px;
+  padding: 7px 10px;
+  font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
 }
 
-.tabBtn:hover { background: #2a2419; }
+.tabBtn:hover { background: #362d1f; border-color: #6b5a3f; }
 
 .tabBtn.active {
   background: #4a3d28;
   color: #ffd76b;
   font-weight: bold;
-  border-left-color: #ffd76b;
+  border-color: #ffd76b;
 }
 
 /* content: fixed-size pane, close button floats top-right, active panel scrolls internally */
@@ -208,7 +252,40 @@ canvas {
 }
 .tutorialList li { margin-bottom: 4px; }
 
+.shopRefreshCountdown {
+  font-size: 12px;
+  color: #ffd76b;
+  font-weight: bold;
+  margin: -4px 0 10px 0;
+}
+
 #palette { margin-bottom: 12px; }
+
+/* Shop tab's category sub-tabs (js/ui/paletteUI.js) — a horizontal row, unlike the vertical
+   main menu tabs (.tabBtn), since this sits inside an already-narrow content pane */
+.subTabBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.subTabBtn {
+  background: #2a2419;
+  border: 2px solid #6b5a3f;
+  color: #d8c9ab;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.subTabBtn:hover { background: #3b3327; }
+.subTabBtn.active {
+  background: #4a3d28;
+  color: #ffd76b;
+  font-weight: bold;
+  border-color: #ffd76b;
+}
 
 .paletteGrid {
   display: grid;
@@ -261,7 +338,6 @@ th { color: #ffd76b; }
 .rolePanelSlots { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .staffSlot {
-  width: 74px;
   min-height: 74px;
   border-radius: 8px;
   border: 2px solid #6b5a3f;
@@ -273,23 +349,28 @@ th { color: #ffd76b; }
   padding: 4px;
   gap: 2px;
 }
-.staffSlot.filled { background: #3f5a6b; border-color: #5c8aae; }
+.staffSlot.filled { width: 104px; background: #3f5a6b; border-color: #5c8aae; padding: 6px; }
 .staffSlot .slotIcon { font-size: 20px; }
-.staffSlot .slotName { font-size: 10px; color: #f1e9dc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 66px; }
+.staffSlot .slotName { font-size: 10px; color: #f1e9dc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 92px; }
 .staffSlot .slotLevel { font-size: 10px; color: #ffd76b; }
-.staffSlot.locked { background: #241f1a; color: #6b6156; cursor: pointer; }
+.staffSlot.locked { width: 74px; background: #241f1a; color: #6b6156; cursor: pointer; }
 .staffSlot.locked:hover { border-color: #ffd76b; }
 .staffSlot.locked.disabled { opacity: 0.5; cursor: not-allowed; }
 .staffSlot .slotCost { color: #ffd76b; font-size: 12px; }
 
-.smallBtn { padding: 4px 8px; font-size: 12px; }
+.slotActions { display: flex; align-items: center; gap: 4px; margin-top: 3px; }
+.slotTrainingText { font-size: 9px; color: #cfc6b8; }
+.smallBtn, .slotBtn { padding: 4px 8px; font-size: 12px; }
+.slotBtn { padding: 3px 6px; font-size: 10px; }
+.slotFireBtn { padding: 3px 6px; background: #5a2f2f; color: #ffdada; }
 
 #ordersPanel {
   position: fixed;
   right: 16px;
   top: 60px;
-  width: 220px;
-  max-height: 65vh;
+  width: 500px;
+  max-width: 94vw;
+  max-height: 70vh;
   background: #2f2a22;
   border: 3px solid #8a6b3f;
   border-radius: 10px;
@@ -324,27 +405,70 @@ th { color: #ffd76b; }
 }
 
 #ordersList {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Orders tab pipeline board (js/ui/ordersUI.js) — one column per stage, one card per
+   customer, from order-taken through to eating. Deliberately NOT flex:1 here — the panel
+   should shrink-wrap to however much content actually exists instead of always stretching
+   to fill max-height and leaving blank space under a couple of cards. Each column's own
+   body (below) caps its height and scrolls instead, so a big backlog in one column doesn't
+   blow out the whole panel either. */
+.ordersColumns {
+  display: flex;
+  gap: 8px;
   padding: 10px;
-  overflow-y: auto;
+  overflow-x: auto;
+}
+
+.ordersColumn {
+  flex: 1 1 0;
+  min-width: 130px;
+  display: flex;
+  flex-direction: column;
+  background: #241f1a;
+  border: 1px solid #4a3d28;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.ordersColumnHeader {
+  background: #1f1b16;
+  padding: 6px 8px;
+  font-weight: bold;
+  font-size: 12px;
+  color: #ffd76b;
+  border-bottom: 1px solid #4a3d28;
+  text-align: center;
+}
+
+.ordersColumnBody {
+  padding: 6px;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  overflow-y: auto;
+  max-height: 40vh;
+  min-height: 0;
 }
 
-.orderRow {
+.orderCard {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 6px;
   padding: 6px 8px;
   border-radius: 6px;
-  font-size: 12px;
-  gap: 8px;
+  font-size: 11px;
+  background: rgba(140, 140, 140, 0.18);
+  border: 1px solid #4a3d28;
+  color: #e8dcc4;
 }
-.orderReady { background: rgba(76, 175, 80, 0.25); border: 1px solid #4caf50; color: #cdeecb; }
-.orderPending { background: rgba(140, 140, 140, 0.22); border: 1px solid #6b6156; color: #cfc6b8; }
-.orderEmpty { color: #a99c86; font-size: 12px; padding: 6px; }
+.orderCardIcon { font-size: 15px; }
+.orderEmpty { color: #a99c86; font-size: 12px; padding: 6px; text-align: center; }
 
-/* achievements tab — sequential milestones, not experience */
+/* achievements tab — sequential cash-bonus milestones, fully separate from the Levels tab below */
 .achievementRow {
   display: flex;
   align-items: flex-start;
@@ -371,6 +495,33 @@ th { color: #ffd76b; }
 .achievementProgressFill { height: 100%; background: #ffd76b; }
 .achievementProgressText { font-size: 11px; color: #cfc6b8; margin-top: 3px; }
 .achievementEmpty { color: #a99c86; font-size: 12px; padding: 6px; }
+
+/* levels tab (js/ui/levelsUI.js) — 100 rows, same visual language as achievements above but
+   an independent class set so the two tabs can diverge later without coupling */
+.levelRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+.levelDone { background: rgba(76, 175, 80, 0.18); border: 1px solid #4caf50; }
+.levelActive { background: rgba(255, 215, 107, 0.15); border: 1px solid #ffd76b; }
+.levelLocked { background: rgba(140, 140, 140, 0.12); border: 1px solid #4a4136; opacity: 0.6; }
+.levelIcon { font-size: 20px; line-height: 1; }
+.levelBody { flex: 1; }
+.levelName { font-weight: bold; color: #f1e9dc; font-size: 13px; }
+.levelReward { font-size: 11px; color: #ffd76b; margin-top: 4px; }
+.levelProgressBar {
+  height: 8px;
+  background: #2a2a2a;
+  border-radius: 4px;
+  margin-top: 6px;
+  overflow: hidden;
+}
+.levelProgressFill { height: 100%; background: #ffd76b; }
+.levelProgressText { font-size: 11px; color: #cfc6b8; margin-top: 3px; }
 
 /* storage quick bar — fixed 9 slots, bottom center */
 #hotbar {

@@ -1,7 +1,7 @@
 // Shared shape for anything a chair can pair up with to seat a customer: a table, or a
-// counter used as bar seating (see World.chairsForTables / tableOfChair). Order-taking
-// and food delivery are handled directly by waiter.js, and cleanup by cleaner.js — this type
-// itself just carries the dirty-plate state they read/write.
+// counter used as bar seating (see World.chairsForTables / tableOfChair). Order-taking,
+// food delivery, and bussing are all handled directly by waiter.js — this type itself just
+// carries the dirty-plate state it reads/writes.
 
 import { SCALE } from '../../core/constants.js';
 

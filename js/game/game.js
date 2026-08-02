@@ -4,37 +4,40 @@
 
 import { COLS, ROWS, CELL } from '../core/constants.js';
 import { World } from '../core/world.js';
-import { getObjectType, createObject, ITEM_DEFS, FARM_CROP_TYPES, ANIMAL_TYPES, STOVE_TYPES } from '../objects/registry.js';
+import { getObjectType, createObject, ITEM_DEFS, FARM_CROP_TYPES, ANIMAL_TYPES, STOVE_TYPES, SINK_TYPES } from '../objects/registry.js';
 import { tickFarmGrowth } from '../objects/shared/farmCropFactory.js';
 import { tickCooking } from '../objects/shared/stoveFactory.js';
 import { tickAnimalHunger } from '../objects/shared/ranchAnimalFactory.js';
-import { tickWaterTap } from '../objects/waterTap.js';
+import { tickSinkWater } from '../objects/shared/sinkFactory.js';
 import { getRecipe, isRecipeUnlocked } from '../data/recipes.js';
 import { MAX_WAITING, SHOP_REFRESH_INTERVAL, SPAWN_CYCLE_MS, SPAWN_MIN_PER_CYCLE, SPAWN_MAX_PER_CYCLE } from '../data/balance.js';
 import { Customer } from '../entities/customer.js';
 import { StaffMember } from '../entities/staffMember.js';
+import { Bee } from '../entities/bee.js';
 import { FloatingText } from '../entities/floatingText.js';
 import { getHireCost, staffTrainCost, staffTrainTime } from './staffEconomy.js';
-import { renderPalette } from '../ui/paletteUI.js';
+import { renderPalette, updateShopRefreshCountdown } from '../ui/paletteUI.js';
 import { refreshStorageUI } from '../ui/hotbarUI.js';
-import { renderStaffTable, renderStaffPanels } from '../ui/staffUI.js';
+import { renderStaffPanels, GATED_ROLES } from '../ui/staffUI.js';
 import { renderOrdersPanel } from '../ui/ordersUI.js';
 import { renderIngredientsBox } from '../ui/ingredientsUI.js';
 import { renderRecipeTable } from '../ui/recipeUI.js';
-import { updateMoneyUI } from '../ui/statusUI.js';
+import { updateMoneyUI, updateXpBarUI } from '../ui/statusUI.js';
 import { hideContextMenu } from '../ui/contextMenuUI.js';
 import { STAFF_MAX_LEVEL } from '../data/staffConfig.js';
 import { checkAchievements } from './achievements.js';
 import { renderAchievements } from '../ui/achievementsUI.js';
+import { checkLevelUp } from './leveling.js';
+import { renderLevels } from '../ui/levelsUI.js';
 
 export class Game {
   constructor() {
     this.world = new World();
-    // just enough to hire one chef + one waiter + one cleaner right away (100 each, see
-    // staffEconomy.js's getHireCost) — those three are the minimum needed for the
-    // restaurant to run itself now that there's no player to fill in manually
+    // starting capital for shop purchases and additional hires — the starting kit itself
+    // (staff + furniture, see setupLevel) is free and separate from this
     this.money = 300;
     this.staff = []; // hired AND placed — actually working
+    this.bees = []; // spawned by beehives (see spawnBeesForHive), free-roaming (entities/bee.js)
     this.staffInventory = []; // hired but not yet placed — waiting in the quick bar, see hireStaff/beginPlacingStaff
     this.heldStaff = null; // the role currently in-hand, ready to place (parallel to heldObject)
     this.inventory = []; // bought/stored objects not currently on the grid
@@ -50,23 +53,26 @@ export class Game {
     this.isOpen = true;
     this.staffUIRefresh = 0; // throttles the staff table redraw while training counts down
     this.wasTraining = false;
-    this.ordersUIRefresh = 0; // throttles the orders panel redraw
+    this.ordersUIRefresh = 0; // throttles the orders panel + ingredients box + shop countdown redraw
     this.ingredients = {
       wheat: 0, shrimp: 0, chicken: 0, tomato: 0, cabbage: 0, corn: 0, potato: 0,
       carrot: 0, onion: 0, pumpkin: 0, salmon: 0, milk: 0,
-      cod: 0, tuna: 0, egg: 0, beef: 0, water: 0,
+      cod: 0, tuna: 0, egg: 0, beef: 0, water: 0, honey: 0,
     }; // ingredient stock, consumed by recipes that need them — starts empty, so only rice (which needs nothing) is ever ordered until you have some
     this.shopStock = {}; // how many of each shop item are currently available to buy
     this.shopRefreshTimer = SHOP_REFRESH_INTERVAL;
     this.floatingTexts = []; // transient "+$X" payment popups (see entities/floatingText.js)
 
-    // achievements: sequential deadlines, not experience — see data/achievements.js. Must be
-    // set up before refreshShopStock() below, since renderPalette() reads unlockedStoveTiers.
+    // achievements: sequential deadlines, cash-only, fully separate from unlocking — see
+    // data/achievements.js. Content unlocks come from restaurantLevel instead (see
+    // data/levels.js / game/leveling.js), driven by lifetime revenue. Both must be set up
+    // before refreshShopStock() below, since renderPalette() reads unlockedObjectTypes.
     this.stats = { customersServed: 0, totalRevenue: 0 };
     this.achievementIndex = 0;
     this.completedAchievementIds = [];
-    this.unlockedRecipes = new Set(); // recipe ids unlocked via achievement rewards
-    this.unlockedStoveTiers = new Set(['stove']); // stove types purchasable in the shop
+    this.restaurantLevel = 1;
+    this.unlockedRecipes = new Set(); // recipe ids unlocked via level-up rewards
+    this.unlockedObjectTypes = new Set(); // object types (any category) unlocked via level-up rewards
 
     this.refreshShopStock();
 
@@ -113,57 +119,20 @@ export class Game {
   setupLevel() {
     const w = this.world;
 
-    // a fully enclosed starting room — 10 wide x 6 tall, walled on all sides except a
-    // single 1-cell entrance. The top-left interior corner is a black & white tiled kitchen
-    // nook holding the core appliances; the rest of the room is wood-floored dining space
-    // with a small 3-seat bar along the right wall.
-    const ROOM_X = 6, ROOM_Y = 6, ROOM_W = 10, ROOM_H = 6;
-    const DOOR_X = ROOM_X + 5, DOOR_Y = ROOM_Y + ROOM_H - 1; // centered on the bottom wall
-    const WINDOW_XS = [ROOM_X + 3, ROOM_X + 6]; // two window walls, symmetric along the top wall
+    w.generateWaterPlots(); // 1-3 small fishing ponds along the top of the map
 
-    for (let x = ROOM_X; x < ROOM_X + ROOM_W; x++) {
-      for (let y = ROOM_Y; y < ROOM_Y + ROOM_H; y++) {
-        const onBoundary = x === ROOM_X || x === ROOM_X + ROOM_W - 1 || y === ROOM_Y || y === ROOM_Y + ROOM_H - 1;
-        if (!onBoundary) continue;
-        if (x === DOOR_X && y === DOOR_Y) w.place(createObject('door'), x, y);
-        else if (y === ROOM_Y && WINDOW_XS.includes(x)) w.place(createObject('windowWall'), x, y);
-        else w.place(createObject('wall'), x, y);
-      }
+    // nothing pre-placed on the grid — you build your own room from a free starting kit
+    // instead (waiting in the quick bar, bottom center): a chef and a waiter ready to place,
+    // the 4 core appliances, and enough wall/window/door/table/chairs for a modest first room.
+    this.staffInventory.push({ role: 'chef' }, { role: 'waiter' });
+
+    const STARTER_KIT = [
+      ['fridge', 1], ['stove', 1], ['sink', 1], ['orderStand', 1],
+      ['wall', 30], ['windowWall', 4], ['door', 1], ['table', 1], ['chair', 2],
+    ];
+    for (const [type, count] of STARTER_KIT) {
+      for (let i = 0; i < count; i++) this.inventory.push(createObject(type));
     }
-
-    // kitchen nook: fridge, stove, sink, order stand on black & white tile
-    const KITCHEN_X = ROOM_X + 1, KITCHEN_Y = ROOM_Y + 1, KITCHEN_W = 3, KITCHEN_H = 3;
-    for (let x = KITCHEN_X; x < KITCHEN_X + KITCHEN_W; x++) {
-      for (let y = KITCHEN_Y; y < KITCHEN_Y + KITCHEN_H; y++) {
-        w.placeFloorTile(x, y, 'floorTileBW');
-      }
-    }
-    // one appliance in each corner of the 3x3 nook, leaving the whole middle row + middle
-    // column open as a connected walkway — every corner touches 1-2 boundary walls, so
-    // packing anything else against its remaining open side(s) would wall it off entirely
-    w.place(createObject('fridge'), KITCHEN_X, KITCHEN_Y);
-    w.place(createObject('sink'), KITCHEN_X + 2, KITCHEN_Y);
-    w.place(createObject('orderStand'), KITCHEN_X, KITCHEN_Y + 2);
-    w.place(createObject('stove'), KITCHEN_X + 2, KITCHEN_Y + 2);
-
-    // the rest of the interior: wood floor dining area
-    for (let x = ROOM_X + 1; x < ROOM_X + ROOM_W - 1; x++) {
-      for (let y = ROOM_Y + 1; y < ROOM_Y + ROOM_H - 1; y++) {
-        const inKitchen = x >= KITCHEN_X && x < KITCHEN_X + KITCHEN_W && y >= KITCHEN_Y && y < KITCHEN_Y + KITCHEN_H;
-        if (inKitchen) continue;
-        w.placeFloorTile(x, y, 'floorTile');
-      }
-    }
-
-    // a small 3-seat bar along the right interior wall
-    const BAR_X = ROOM_X + ROOM_W - 2;
-    for (let i = 0; i < 3; i++) {
-      const y = ROOM_Y + 2 + i;
-      w.place(createObject('counter'), BAR_X, y);
-      w.place(createObject('chair'), BAR_X - 1, y);
-    }
-
-    w.generateWater(15);
   }
 
   // called by main.js whenever the canvas is resized (the viewport fills the browser
@@ -210,12 +179,17 @@ export class Game {
   buyItem(type) {
     const def = getObjectType(type);
     if (!def || def.cost == null || this.money < def.cost) return;
-    if (def.requiresUnlock && !this.unlockedStoveTiers.has(type)) return;
+    if (def.requiresUnlock && !this.unlockedObjectTypes.has(type)) return;
     if ((this.shopStock[type] || 0) <= 0) return;
     this.shopStock[type]--;
     this.addMoney(-def.cost); // also re-renders the palette, reflecting the new stock count
     this.inventory.push(createObject(type));
     refreshStorageUI(this);
+  }
+
+  // called from game/input.js right after a beehive lands on the grid
+  spawnBeesForHive(hive) {
+    for (let i = 0; i < 5; i++) this.bees.push(new Bee(hive));
   }
 
   // picks up one item of this type from storage — the hotbar/expand panel call this.
@@ -247,6 +221,7 @@ export class Game {
     if ((t && t.storable === false) || !this.canRemoveObject(obj)) return;
     this.evictCustomersFrom(obj);
     this.world.removeAt(obj.x, obj.y);
+    if (obj.type === 'beehive') this.bees = this.bees.filter(b => b.hive !== obj);
     this.inventory.push(obj);
     refreshStorageUI(this);
   }
@@ -257,6 +232,7 @@ export class Game {
     if (!def || def.cost == null || !this.canRemoveObject(obj)) return;
     this.evictCustomersFrom(obj);
     this.world.removeAt(obj.x, obj.y);
+    if (obj.type === 'beehive') this.bees = this.bees.filter(b => b.hive !== obj);
     this.addMoney(Math.floor(def.cost * 0.5));
     refreshStorageUI(this);
   }
@@ -273,6 +249,20 @@ export class Game {
         const ec = this.world.nearestEntranceCell(c.gx, c.gy);
         const path = this.world.pathTo(c.gx, c.gy, ec.x, ec.y);
         c.setPath(path || []);
+      }
+    }
+  }
+
+  // called when closing (see ui/ui.js's toggleOpenBtn handler) — anyone still just standing
+  // at the door (never got a seat) leaves right away instead of continuing to wait for one
+  // that's never coming. Doesn't touch anyone already seated: they haven't been promised
+  // anything the closure breaks, so they keep eating/waiting to finish normally — trySpawnOne
+  // already refuses new arrivals while closed, so nothing new joins this queue in the meantime.
+  evictDoorQueue() {
+    for (const c of this.world.customers) {
+      if (c.state === 'waitingAtDoor') {
+        c.state = 'leaving';
+        c.setPath([]); // already standing right at the entrance — nowhere to walk, just go
       }
     }
   }
@@ -299,6 +289,7 @@ export class Game {
   // the quick bar / beginPlacingStaff below), not straight onto the grid. They don't work,
   // draw, or update until actually placed.
   hireStaff(role) {
+    if (GATED_ROLES.has(role) && !this.unlockedObjectTypes.has(role)) return;
     const cost = getHireCost(this, role);
     if (this.money < cost) return;
     this.addMoney(-cost);
@@ -325,7 +316,6 @@ export class Game {
     this.heldStaff = null;
     const s = new StaffMember(gx, gy, role);
     this.staff.push(s);
-    renderStaffTable(this);
     renderStaffPanels(this);
     // keep going — pull the next one of the same role straight into hand, same as
     // continuePlacingFromStack does for furniture
@@ -339,12 +329,31 @@ export class Game {
 
   fireStaff(id) {
     const s = this.staff.find(s => s.id === id);
-    if (s && s.task && s.task.stove && s.task.slotIndex != null) {
-      s.task.stove.slots[s.task.slotIndex].reservedBy = null;
-    }
+    if (s) this.releaseStaffClaims(s);
     this.staff = this.staff.filter(s => s.id !== id);
-    renderStaffTable(this);
     renderStaffPanels(this);
+  }
+
+  // firing mid-task must let go of whatever that task was holding — otherwise the claim
+  // (a stove slot, a ready dish, a customer, a dirty table, a crop/hive plot) points at a
+  // staff member that no longer exists and can never be released by anyone else, silently
+  // stranding that resource forever (e.g. a stove slot stuck "ready" with no collector left
+  // is also permanently non-open, which stops chefs from ever starting a new order on it).
+  // Every role's task shape is enumerated here rather than guessed generically, since each
+  // one already carries direct references to exactly what it's claimed.
+  releaseStaffClaims(s) {
+    const t = s.task || {};
+    if (t.stove && t.slotIndex != null) {
+      const slot = t.stove.slots[t.slotIndex];
+      if (slot.reservedBy === s) slot.reservedBy = null;
+      if (slot.collectedBy === s) slot.collectedBy = null;
+    }
+    if (t.plot) t.plot.claimed = false; // farmer: harvest/plant/collectHoney
+    if (t.animal) t.animal.claimed = false; // rancher
+    if (t.customers) t.customers.forEach(c => { c.claimed = false; }); // waiter: taking an order
+    if (t.table) t.table.claimedDirty = false; // waiter: bussing
+    if (t.matches) t.matches.forEach(m => { m.dish.claimedBy = null; m.customer.deliveryClaimed = false; }); // waiter: about to pick up
+    if (s.carryItems) s.carryItems.forEach(item => { if (item.customer) item.customer.deliveryClaimed = false; }); // waiter: mid-delivery
   }
 
   trainStaff(id) {
@@ -355,7 +364,7 @@ export class Game {
     this.addMoney(-cost);
     const time = staffTrainTime(s.level);
     s.training = { remaining: time, total: time };
-    renderStaffTable(this);
+    renderStaffPanels(this);
   }
 
   // ---- customer spawning ----
@@ -430,7 +439,12 @@ export class Game {
       for (const animal of this.world.findObjects(t.type)) tickAnimalHunger(animal, t, dt, this.world);
     }
 
-    for (const tap of this.world.findObjects('waterTap')) tickWaterTap(tap, dt, this);
+    // regen from every placed sink (any tier) shares one cap: the sum of all their capacities
+    const allSinks = SINK_TYPES.flatMap(t => this.world.findObjects(t.type));
+    const totalSinkCapacity = allSinks.reduce((sum, s) => sum + getObjectType(s.type).capacity, 0);
+    for (const sinkObj of allSinks) tickSinkWater(sinkObj, dt, this, totalSinkCapacity);
+
+    for (const b of this.bees) b.update(dt, this.world);
 
     for (const s of this.staff) s.update(dt, this.world, this);
 
@@ -442,7 +456,7 @@ export class Game {
       this.staffUIRefresh -= dt;
       if (this.staffUIRefresh <= 0 || !anyTraining) {
         this.staffUIRefresh = 500;
-        renderStaffTable(this);
+        renderStaffPanels(this);
       }
     }
     this.wasTraining = anyTraining;
@@ -452,6 +466,9 @@ export class Game {
       this.ordersUIRefresh = 400;
       renderOrdersPanel(this);
       renderIngredientsBox(this);
+      updateShopRefreshCountdown(this);
+      updateXpBarUI(this); // ticks up with revenue even between level-ups (see below)
+      renderAchievements(this); // same idea — the active achievement's bar ticks up live too
     }
 
     for (const c of this.world.customers) c.update(dt, this.world, this);
@@ -481,12 +498,21 @@ export class Game {
       this.refreshShopStock();
     }
 
-    // a reward can unlock a shop item (stove tier) or a recipe, so both those panels need
-    // a fresh render the moment a milestone lands — not just whenever they'd redraw anyway
-    if (checkAchievements(this)) {
-      renderAchievements(this);
+    // level-ups are the primary unlock gate now (appliances, recipes) — see data/levels.js /
+    // game/leveling.js. A reward can unlock a shop item or a recipe, so both those panels
+    // need a fresh render the moment one lands, not just whenever they'd redraw anyway.
+    if (checkLevelUp(this)) {
+      renderLevels(this);
       renderPalette(this);
       renderRecipeTable(this);
+      updateXpBarUI(this); // instant reset to the new level's 0%, not a up-to-400ms-stale bar
+    }
+
+    // achievements are a separate, cash-only milestone chain now, fully decoupled from
+    // unlocking — the money reward already re-renders everything it touches via
+    // addMoney -> updateMoneyUI, so this only needs to refresh its own tab
+    if (checkAchievements(this)) {
+      renderAchievements(this);
     }
   }
 }

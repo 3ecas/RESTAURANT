@@ -1,8 +1,9 @@
 // Grid geometry and shared type-sets used across the whole game
 
-// world size — the full buildable field, bigger than what's ever on screen at once
-export const COLS = 36;
-export const ROWS = 30;
+// world size — the full buildable field, bigger than what's ever on screen at once. Square,
+// and a bit smaller than the old 36x30 field.
+export const COLS = 28;
+export const ROWS = 28;
 export const CELL = 40;
 export const SCALE = CELL / 32; // grows the fixed-pixel visuals (characters, badges, text) along with the cell size
 

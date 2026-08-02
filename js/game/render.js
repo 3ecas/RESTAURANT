@@ -9,8 +9,8 @@ import { getRecipe } from '../data/recipes.js';
 import { CARRY_ICONS } from '../data/carryIcons.js';
 import { roundRect, badge, iconBadge } from './drawHelpers.js';
 
-export const ROLE_COLOR = { waiter: '#3fae55', chef: '#f5f5f5', cleaner: '#1a1a1a', farmer: '#c9a227', rancher: '#8b5e3c', fisherman: '#3f8fae' };
-export const ROLE_OUTLINE = { waiter: '#245c30', chef: '#999999', cleaner: '#666666', farmer: '#7a621a', rancher: '#5a3c22', fisherman: '#245a70' };
+export const ROLE_COLOR = { waiter: '#3fae55', chef: '#f5f5f5', farmer: '#c9a227', rancher: '#8b5e3c', fisherman: '#3f8fae' };
+export const ROLE_OUTLINE = { waiter: '#245c30', chef: '#999999', farmer: '#7a621a', rancher: '#5a3c22', fisherman: '#245a70' };
 export const CUSTOMER_COLOR = '#9e9e9e';
 export const CUSTOMER_OUTLINE = '#5a5a5a';
 
@@ -66,7 +66,7 @@ function drawObject(ctx, obj, world) {
 
   const img = getIconImageForObject(obj, world);
   if (img && img.complete && img.naturalWidth > 0) {
-    ctx.drawImage(img, px, py, CELL, CELL);
+    drawRotatedImage(ctx, img, px, py, t.getRotationDeg ? t.getRotationDeg(obj, world) : 0);
   } else {
     ctx.fillStyle = t.color;
     roundRect(ctx, px + 2, py + 2, CELL - 4, CELL - 4, 5);
@@ -78,6 +78,20 @@ function drawObject(ctx, obj, world) {
   }
 
   if (t.drawExtra) t.drawExtra(ctx, obj, px, py, CELL);
+}
+
+// draws a 1-cell sprite rotated about its own center — lets a single sprite (e.g. one wall
+// "corner" piece, see objects/shared/wallFactory.js) cover all 4 facings of its shape
+function drawRotatedImage(ctx, img, px, py, rotationDeg) {
+  if (!rotationDeg) {
+    ctx.drawImage(img, px, py, CELL, CELL);
+    return;
+  }
+  ctx.save();
+  ctx.translate(px + CELL / 2, py + CELL / 2);
+  ctx.rotate(rotationDeg * Math.PI / 180);
+  ctx.drawImage(img, -CELL / 2, -CELL / 2, CELL, CELL);
+  ctx.restore();
 }
 
 function drawCarried(ctx, px, py, carrying) {
@@ -103,6 +117,13 @@ function drawCharacter(ctx, px, py, color, outline, carrying, label) {
     ctx.textAlign = 'center';
     ctx.fillText(label, px, py + 16 * SCALE);
   }
+}
+
+function drawBee(ctx, bee) {
+  ctx.font = Math.round(11 * SCALE) + 'px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('🐝', bee.px, bee.py);
 }
 
 function drawCustomer(ctx, c) {
@@ -153,12 +174,13 @@ function drawHeldPreview(ctx, game) {
   const valid = FLOOR_TILE_TYPES.has(type)
     ? game.world.inBounds(x, y) && !game.world.isWater(x, y)
     : game.world.isBuildable(x, y);
-  // a fake {type,x,y} stand-in is enough for a type's getImageSrc hook (e.g. wall.js's
-  // orientation detection) to preview correctly at the hovered cell before it's really placed
-  const img = getIconImageForObject({ type, x, y }, game.world);
+  // a fake {type,x,y} stand-in is enough for a type's getImageSrc/getRotationDeg hooks (e.g.
+  // wall.js's shape detection) to preview correctly at the hovered cell before it's placed
+  const previewObj = { type, x, y };
+  const img = getIconImageForObject(previewObj, game.world);
   ctx.globalAlpha = 0.6;
   if (img && img.complete && img.naturalWidth > 0) {
-    ctx.drawImage(img, x * CELL, y * CELL, CELL, CELL);
+    drawRotatedImage(ctx, img, x * CELL, y * CELL, t.getRotationDeg ? t.getRotationDeg(previewObj, game.world) : 0);
     if (!valid) {
       ctx.fillStyle = 'rgba(224,82,82,0.5)';
       roundRect(ctx, x * CELL + 2, y * CELL + 2, CELL - 4, CELL - 4, 5);
@@ -195,6 +217,7 @@ export function render(ctx, canvas, game) {
   const drawables = [
     ...game.world.customers.map(c => ({ py: c.py, draw: () => drawCustomer(ctx, c) })),
     ...game.staff.map(s => ({ py: s.py, draw: () => drawCharacter(ctx, s.px, s.py, ROLE_COLOR[s.role], ROLE_OUTLINE[s.role], s.carrying, s.role) })),
+    ...game.bees.map(b => ({ py: b.py, draw: () => drawBee(ctx, b) })),
   ];
   drawables.sort((a, b) => a.py - b.py);
   for (const d of drawables) d.draw();

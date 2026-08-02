@@ -1,13 +1,14 @@
 // Top-level DOM wiring — tabs, menu buttons, orders/hotbar panel toggles
 
-import { renderPalette } from './paletteUI.js';
+import { renderPalette, updateShopRefreshCountdown } from './paletteUI.js';
 import { refreshStorageUI, renderHotbarExpand } from './hotbarUI.js';
-import { renderStaffPanels, renderStaffTable } from './staffUI.js';
+import { renderStaffPanels } from './staffUI.js';
 import { renderOrdersPanel } from './ordersUI.js';
 import { renderIngredientsBox } from './ingredientsUI.js';
 import { renderRecipeTable } from './recipeUI.js';
-import { updateMoneyUI, updateOpenStatusUI } from './statusUI.js';
+import { updateMoneyUI, updateOpenStatusUI, updateXpBarUI } from './statusUI.js';
 import { renderAchievements } from './achievementsUI.js';
+import { renderLevels } from './levelsUI.js';
 
 export function initUI(game) {
   document.querySelectorAll('.tabBtn').forEach(btn => {
@@ -16,6 +17,7 @@ export function initUI(game) {
       document.querySelectorAll('.tabPanel').forEach(p => p.classList.remove('active'));
       btn.classList.add('active');
       document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+      game.openMenu();
     });
   });
 
@@ -23,6 +25,7 @@ export function initUI(game) {
 
   document.getElementById('toggleOpenBtn').addEventListener('click', () => {
     game.isOpen = !game.isOpen;
+    if (!game.isOpen) game.evictDoorQueue(); // seated customers are unaffected — see Game.evictDoorQueue
     updateOpenStatusUI(game);
   });
 
@@ -40,15 +43,17 @@ export function initUI(game) {
   });
 
   renderPalette(game);
+  updateShopRefreshCountdown(game);
   renderRecipeTable(game);
   renderStaffPanels(game);
-  renderStaffTable(game);
   refreshStorageUI(game);
   renderOrdersPanel(game);
   renderIngredientsBox(game);
   renderAchievements(game);
+  renderLevels(game);
   updateMoneyUI(game);
   updateOpenStatusUI(game);
+  updateXpBarUI(game);
 }
 
 // puts a held object (or held staff member) back — into storage if it came from there (its

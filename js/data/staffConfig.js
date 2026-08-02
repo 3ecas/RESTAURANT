@@ -7,16 +7,18 @@ export const NAMES = ['Alex', 'Sam', 'Jordan', 'Casey', 'Riley', 'Morgan', 'Tayl
 export const STAFF_BASE_SPEED = 48;
 export const STAFF_MAX_LEVEL = Infinity;
 
-const FAST_ROLES = new Set(['waiter', 'cleaner']);
+const FAST_ROLES = new Set(['waiter']);
 
-// +8%/level for waiter/cleaner, +6%/level for the rest — roughly tracks the old fixed
-// 5-level tables at level 5, then keeps climbing instead of flatlining there
+// waiter gets a flat +30% base on top of its own steeper +8%/level curve — at level 1 the
+// old formula (1.08x) was barely faster than everyone else's 1.06x, so taking an order felt
+// slow even though the role was nominally "fast". +6%/level for the rest — roughly tracks
+// the old fixed 5-level tables at level 5, then keeps climbing instead of flatlining there
 export function speedMultiplier(role, level) {
-  const rate = FAST_ROLES.has(role) ? 0.08 : 0.06;
-  return 1 + rate * level;
+  if (FAST_ROLES.has(role)) return 1.3 + 0.08 * level;
+  return 1 + 0.06 * level;
 }
 
-// chef: stove/oven cook speed. rancher: animal-shack process speed. fisherman: catch speed.
+// chef: stove cook speed. rancher: animal-shack process speed. fisherman: catch speed.
 // baked into whatever they're working on at the moment it starts (see chef.js/rancher.js/
 // fisherman.js), not read continuously. A fresh chef deliberately starts slower than doing
 // it yourself (< 1x) — hiring one isn't an instant win — and only overtakes manual play

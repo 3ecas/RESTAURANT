@@ -8,4 +8,5 @@ export const freezer = {
   color: '#bcd9e8',
   cost: 45,
   category: 'Fishing',
+  requiresUnlock: true,
 };

@@ -1,6 +1,9 @@
-// Waiter: takes orders from seated customers, delivers finished dishes from the order stand
+// Waiter: takes orders from seated customers, delivers finished dishes from the order stand,
+// and buses dirty tables (dropping the batch at a sink) whenever neither of those needs doing —
+// there's no separate cleaner role, so this is the lowest-priority fallback job.
 
 import { EAT_TIME } from '../../data/balance.js';
+import { SINK_TYPES } from '../../objects/registry.js';
 
 export function updateWaiter(staff, dt, world, game) {
   if (staff.phase === 'idle') {
@@ -31,7 +34,10 @@ export function updateWaiter(staff, dt, world, game) {
         }
       }
     }
-    const customer = world.customers.find(c => c.state === 'waitingOrder' && !c.claimed);
+    // stands.length check: taking an order with no order stand to send it to would just
+    // strand the customer in 'waitingFood' forever — nothing would ever queue for a chef to
+    // see. Leave them in 'waitingOrder' (harmless — they just keep waiting) until one exists.
+    const customer = stands.length > 0 && world.customers.find(c => c.state === 'waitingOrder' && !c.claimed);
     if (customer) {
       // take orders from everyone else already ready at the same table too, not just this one seat
       const table = world.tableOfChair(customer.chair);
@@ -44,7 +50,24 @@ export function updateWaiter(staff, dt, world, game) {
         staff.task = { type: 'takeOrder', customers: tableCustomers };
         staff.setPath(path);
         staff.phase = 'toCustomerOrder';
+        return;
       }
+    }
+    // lowest priority: nothing to serve or take right now, so bus a dirty table instead —
+    // batches up to carryCapacity() before heading to the sink, same shape as the delivery loop above
+    if (staff.carryItems.length >= staff.carryCapacity()) {
+      _headToSink(staff, world);
+      return;
+    }
+    const dirtyTable = world.seatingSurfaces().find(t => t.dirty && !t.claimedDirty);
+    if (dirtyTable) {
+      dirtyTable.claimedDirty = true;
+      staff.task = { table: dirtyTable };
+      const path = world.pathToAdjacent(staff.gx, staff.gy, dirtyTable.x, dirtyTable.y);
+      staff.setPath(path || []);
+      staff.phase = 'toTable';
+    } else if (staff.carryItems.length > 0) {
+      _headToSink(staff, world);
     }
   } else if (staff.phase === 'toStandPickup') {
     if (!staff.hasPath) {
@@ -94,6 +117,28 @@ export function updateWaiter(staff, dt, world, game) {
       staff.task = {};
       staff.phase = 'idle';
     }
+  } else if (staff.phase === 'toTable') {
+    if (!staff.hasPath) {
+      if (!staff.task.table.dirty) {
+        // someone else already bused it while this waiter was en route
+        staff.task.table.claimedDirty = false;
+        staff.task = {};
+        staff.phase = 'idle';
+        return;
+      }
+      staff.task.table.dirty = false;
+      staff.task.table.claimedDirty = false;
+      staff.carryItems.push({ kind: 'dirty' });
+      staff.updateCarryVisual();
+      staff.task = {};
+      staff.phase = 'idle';
+    }
+  } else if (staff.phase === 'toSink') {
+    if (!staff.hasPath) {
+      staff.carryItems = [];
+      staff.updateCarryVisual();
+      staff.phase = 'idle';
+    }
   }
 }
 
@@ -112,5 +157,18 @@ function _advanceWaiterDelivery(staff, world) {
     staff.carryItems.shift();
     staff.updateCarryVisual();
     _advanceWaiterDelivery(staff, world);
+  }
+}
+
+// if there's no sink (or no path to it) yet, just keep carrying and retry next tick —
+// never silently destroy what's being carried
+function _headToSink(staff, world) {
+  for (const sink of SINK_TYPES.flatMap(t => world.findObjects(t.type))) {
+    const path = world.pathToAdjacent(staff.gx, staff.gy, sink.x, sink.y);
+    if (path) {
+      staff.setPath(path);
+      staff.phase = 'toSink';
+      return;
+    }
   }
 }

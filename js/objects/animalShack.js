@@ -9,4 +9,5 @@ export const animalShack = {
   color: '#a67c52',
   cost: 55,
   category: 'Ranching',
+  requiresUnlock: true,
 };

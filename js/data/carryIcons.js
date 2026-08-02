@@ -23,4 +23,5 @@ export const CARRY_ICONS = {
   chicken: '🍗',
   feed: '🌾',
   rawAnimal: '🐮',
+  honey: '🍯',
 };

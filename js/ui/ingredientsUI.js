@@ -3,7 +3,7 @@
 export const INGREDIENT_ICON = {
   wheat: '🌾', shrimp: '🦐', chicken: '🍗', tomato: '🍅', cabbage: '🥬', corn: '🌽', potato: '🥔',
   carrot: '🥕', onion: '🧅', pumpkin: '🎃', salmon: '🐟', milk: '🥛',
-  cod: '🐟', tuna: '🐟', egg: '🥚', beef: '🥩', water: '💧',
+  cod: '🐟', tuna: '🐟', egg: '🥚', beef: '🥩', water: '💧', honey: '🍯',
 };
 
 // only ingredients you actually have any of are listed

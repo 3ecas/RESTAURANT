@@ -1,16 +1,7 @@
-// Sink — cleaners drop dirty plates here (entities/staffRoles/cleaner.js); instant, no wash
-// timer currently used.
+// Sink — base tier. Holds up to 5 water at a time (see shared/sinkFactory.js).
 
-export const sink = {
-  type: 'sink',
-  name: 'Sink',
-  icon: '🚰',
-  color: '#a9c9d8',
-  cost: 40,
-  category: 'Appliances',
-  image: 'ASSETS/SINK.png',
+import { makeSink } from './shared/sinkFactory.js';
 
-  createState(base) {
-    return Object.assign(base, { washing: false, progress: 0 });
-  },
-};
+export const sink = makeSink({
+  type: 'sink', name: 'Sink', cost: 40, capacity: 5, image: 'ASSETS/SINK.png',
+});

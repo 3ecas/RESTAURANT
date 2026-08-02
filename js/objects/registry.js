@@ -9,11 +9,10 @@ import { fridge } from './fridge.js';
 import { stove } from './stove.js';
 import { stoveII } from './stoveII.js';
 import { stoveIII } from './stoveIII.js';
-import { oven } from './oven.js';
-import { waterTap } from './waterTap.js';
-import { prepCounter } from './prepCounter.js';
 import { orderStand } from './orderStand.js';
 import { sink } from './sink.js';
+import { sinkII } from './sinkII.js';
+import { sinkIII } from './sinkIII.js';
 import { table } from './table.js';
 import { chair } from './chair.js';
 import { counter } from './counter.js';
@@ -28,6 +27,7 @@ import { potatoFarm } from './potatoFarm.js';
 import { carrotFarm } from './carrotFarm.js';
 import { onionFarm } from './onionFarm.js';
 import { pumpkinFarm } from './pumpkinFarm.js';
+import { beehive } from './beehive.js';
 import { freezer } from './freezer.js';
 import { chicken } from './chicken.js';
 import { chickenFeeder } from './chickenFeeder.js';
@@ -41,10 +41,10 @@ import { oakChair } from './oakChair.js';
 import { pottedPlant } from './pottedPlant.js';
 
 export const OBJECT_TYPES = [
-  fridge, stove, stoveII, stoveIII, oven, waterTap, prepCounter, orderStand, sink,
+  fridge, stove, stoveII, stoveIII, orderStand, sink, sinkII, sinkIII,
   table, chair, counter, wall, windowWall, door,
   roundTable, oakChair, pottedPlant,
-  farmPlot, tomatoFarm, cabbageFarm, cornFarm, potatoFarm, carrotFarm, onionFarm, pumpkinFarm,
+  farmPlot, tomatoFarm, cabbageFarm, cornFarm, potatoFarm, carrotFarm, onionFarm, pumpkinFarm, beehive,
   freezer, chicken, chickenFeeder, cow, cowFeeder, animalShack,
   floorTile, floorTileBW,
 ];
@@ -79,6 +79,10 @@ export const ANIMAL_TYPES = OBJECT_TYPES.filter(t => t.isAnimal);
 // full type definitions for every stove tier — chef.js/game.js need the grid type name plus
 // its slot/speed config (see objects/shared/stoveFactory.js)
 export const STOVE_TYPES = OBJECT_TYPES.filter(t => t.isStove);
+
+// full type definitions for every sink tier — game.js/waiter.js need the grid type name plus
+// its water capacity (see objects/shared/sinkFactory.js)
+export const SINK_TYPES = OBJECT_TYPES.filter(t => t.isSink);
 
 let _objId = 1;
 export function createObject(type) {

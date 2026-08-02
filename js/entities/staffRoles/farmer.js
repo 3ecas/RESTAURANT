@@ -33,6 +33,16 @@ export function updateFarmer(staff, dt, world, game) {
         return;
       }
     }
+    // priority 3: collect honey from any hive that has some waiting
+    const hive = world.findObjects('beehive').find(h => h.honey > 0 && !h.claimed);
+    if (hive) {
+      hive.claimed = true;
+      staff.task = { plot: hive, action: 'collectHoney' };
+      const path = world.pathToAdjacent(staff.gx, staff.gy, hive.x, hive.y);
+      staff.setPath(path || []);
+      staff.phase = 'toPlot';
+      return;
+    }
     if (staff.carryItems.length > 0) headToFridge(staff, world);
   } else if (staff.phase === 'toPlot') {
     if (!staff.hasPath) {
@@ -48,6 +58,12 @@ export function updateFarmer(staff, dt, world, game) {
           staff.carryItems.push({ kind: staff.task.crop });
           staff.updateCarryVisual();
         }
+      } else if (staff.task.action === 'collectHoney') {
+        const take = Math.min(plot.honey, staff.carryCapacity() - staff.carryItems.length);
+        for (let i = 0; i < take; i++) staff.carryItems.push({ kind: 'honey' });
+        staff.updateCarryVisual();
+        plot.honey -= take;
+        plot.claimed = false;
       } else { // plant
         if (plot.planted) {
           plot.claimed = false;

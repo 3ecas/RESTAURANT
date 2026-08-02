@@ -1,12 +1,7 @@
-// Shared shape for every stove tier (and the Oven, see objects/oven.js) — cooks `slotCount`
-// orders concurrently instead of just one, and applies its own `tierMultiplier` on top of
-// whatever chef cooked it (see entities/staffRoles/chef.js). A slot's cookMultiplier is baked
-// in once when cooking starts so it keeps applying even after the chef walks off (see
-// tickCooking below). NOTE: a cook station is always treated as the *last* step of a
-// recipe's process once it accepts an ingredient — collecting a ready slot always hands back
-// a finished `cooked` item, never an intermediate one. That's fine for every current recipe
-// (stove/oven only ever sit at the end of the chain) but would need extending if a future
-// recipe ever needed one mid-process.
+// Shared shape for every stove tier — cooks `slotCount` orders concurrently instead of just
+// one, and applies its own `tierMultiplier` on top of whatever chef cooked it (see
+// entities/staffRoles/chef.js). A slot's cookMultiplier is baked in once when cooking starts
+// so it keeps applying even after the chef walks off (see tickCooking below).
 
 import { getRecipe } from '../../data/recipes.js';
 import { progressBar, readyCheckmark, badge } from '../../game/drawHelpers.js';
@@ -24,8 +19,15 @@ export function makeStove({ type, name, cost, slotCount, tierMultiplier, image, 
       return Object.assign(base, { slots: Array.from({ length: slotCount }, makeSlot) });
     },
 
-    canRemove(obj) { return !obj.slots.some(s => s.cooking); },
-    canMove(obj) { return !obj.slots.some(s => s.cooking); },
+    // blocks on `reservedBy` too, not just `cooking` — a chef reserves its slot the instant
+    // it *decides* to walk over, well before it physically arrives and cooking actually
+    // starts. Without this, moving/selling the stove during that walk detaches the stove
+    // object from the world; the chef still finishes the walk and writes cooking state onto
+    // that now-orphaned object, which tickCooking (iterating world.findObjects) never finds
+    // again — the order is gone and the order stand never sees it. `ready` is blocked too:
+    // a finished, uncollected dish would be lost the same way.
+    canRemove(obj) { return !obj.slots.some(s => s.cooking || s.ready || s.reservedBy); },
+    canMove(obj) { return !obj.slots.some(s => s.cooking || s.ready || s.reservedBy); },
 
     drawExtra(ctx, obj, px, py, cellSize) {
       const readyCount = obj.slots.filter(s => s.ready).length;
